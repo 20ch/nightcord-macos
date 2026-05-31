@@ -700,7 +700,7 @@ function ThemesTab() {
                     action={() => VencordNative.quickCss.openEditor()}
                     Icon={PaintbrushIcon}
                 />
-                {Settings.plugins.ClientTheme?.enabled && (
+                {Settings.plugins.ClientTheme?.enabled && Plugins.ClientTheme && (
                     <QuickAction
                         text="Edit ClientTheme"
                         action={() => openPluginModal(Plugins.ClientTheme)}

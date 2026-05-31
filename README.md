@@ -33,7 +33,7 @@ Nightcord is a fork of Equicord, which itself builds on top of Vencord. We strip
 1. Download **`Nightcord.dmg`**
 2. **Double click and open**
 
-## Fix (Mac file “damaged” / Apple security block):
+## Fix (Mac file "damaged" / Apple security block):
 xattr -d com.apple.quarantine /path/to/file
 Then try reopening the file again
 

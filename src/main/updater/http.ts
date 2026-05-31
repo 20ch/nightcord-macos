@@ -14,9 +14,9 @@ import { join } from "path";
 
 import { serializeErrors } from "./common";
 
-const RELEASES_REPO = "nightcordoff/nightcord";
-const API_BASE = `https://api.github.com/repos/${RELEASES_REPO}`;
-const REPO_URL = `https://github.com/${RELEASES_REPO}`;
+const RELEASES_REPO = "nightcord/nightcord";
+const API_BASE = `https://git.nightcord.su/api/v1/repos/${RELEASES_REPO}`;
+const REPO_URL = `https://git.nightcord.su/${RELEASES_REPO}`;
 declare const VERSION: string;
 const CURRENT_VERSION = `v${VERSION}`;
 const ZIP_FILE = "nightcord-dist.zip";

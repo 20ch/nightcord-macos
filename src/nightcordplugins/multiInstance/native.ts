@@ -110,10 +110,17 @@ function createTokenPreload(token: string): string {
 (function() {
     const TOKEN = ${safeToken};
     try {
-        // Définit le token dans localStorage
-        Object.defineProperty(window, '__nightcord_token', { value: TOKEN, writable: false });
 
-        // Patch localStorage.getItem pour toujours retourner le token si demandé
+        if (typeof window !== 'undefined' && window.electronAPI) {
+            window.electronAPI.storeSecureToken(TOKEN).then(() => {
+                console.log("[NightcordMI] Token stored securely ✓");
+            }).catch(() => {
+                localStorage.setItem("token", JSON.stringify(TOKEN));
+            });
+        } else {
+            localStorage.setItem("token", JSON.stringify(TOKEN));
+        }
+
         const _origGetItem = Storage.prototype.getItem;
         const _origSetItem = Storage.prototype.setItem;
 
@@ -124,10 +131,14 @@ function createTokenPreload(token: string): string {
             return _origGetItem.call(this, key);
         };
 
-        // Pré-remplit aussi
-        try { localStorage.setItem("token", JSON.stringify(TOKEN)); } catch(_) {}
-
         console.log("[NightcordMI] Token preload active ✓");
+        
+        setTimeout(() => {
+            try {
+                const TOKEN = null;
+                console.log("[NightcordMI] Token cleared from memory ✓");
+            } catch(e) {}
+        }, 5000);
     } catch(e) {
         console.warn("[NightcordMI] Preload error:", e);
     }
@@ -135,7 +146,7 @@ function createTokenPreload(token: string): string {
 `;
 
     const filePath = join(dir, `token-preload-${Date.now()}.js`);
-    writeFileSync(filePath, script, "utf-8");
+    writeFileSync(filePath, script, "utf8");
     return filePath;
 }
 

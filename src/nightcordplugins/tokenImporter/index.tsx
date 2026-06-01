@@ -30,14 +30,7 @@ async function getAccounts(): Promise<SavedAccount[]> {
     if (!loadPromise) {
         loadPromise = DataStore.get<SavedAccount[]>(STORE_KEY).then(async v => {
             const accounts = v ?? [];
-            // Decrypt tokens after loading
-            const decryptedAccounts = await Promise.all(
-                accounts.map(async (acc) => {
-                    const decrypted = await Native.decryptStoredToken(acc.token);
-                    return { ...acc, token: decrypted ?? acc.token };
-                })
-            );
-            accountsCache = decryptedAccounts;
+            accountsCache = accounts;
             loadPromise = null;
             return accountsCache;
         });
@@ -84,7 +77,7 @@ async function patchTokenStore() {
     }
 }
 
-function switchToAccount(token: string, userId?: string) {
+async function switchToAccount(token: string, userId?: string) {
     try {
         const isMultiInstance = window.location.href.includes("multi-instance=true") || (window as any).IS_MULTI_INSTANCE;
         if (isMultiInstance && userId) {
@@ -121,14 +114,18 @@ function switchToAccount(token: string, userId?: string) {
             });
         }
 
-        window.localStorage.setItem("token", `"${token}"`);
-        const iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        document.body.appendChild(iframe);
-        try {
-            (iframe as any).contentWindow.localStorage.token = `"${token}"`;
-        } catch { }
-        document.body.removeChild(iframe);
+        if ((window as any).SecureTokenStorage) {
+            await (window as any).SecureTokenStorage.store(token);
+        } else {
+            window.localStorage.setItem("token", `"${token}"`);
+            const iframe = document.createElement("iframe");
+            iframe.style.display = "none";
+            document.body.appendChild(iframe);
+            try {
+                (iframe as any).contentWindow.localStorage.token = `"${token}"`;
+            } catch { }
+            document.body.removeChild(iframe);
+        }
 
         setTimeout(() => {
             location.reload();
@@ -139,18 +136,6 @@ function switchToAccount(token: string, userId?: string) {
     }
 }
 
-function copyMyToken() {
-    try {
-        const token = findByProps("getToken")?.getToken?.();
-        if (token) {
-            if (typeof window.DiscordNative?.clipboard?.copy === "function") {
-                window.DiscordNative.clipboard.copy(token);
-            } else {
-                navigator.clipboard.writeText(token);
-            }
-        }
-    } catch { }
-}
 
 function FolderIcon({ width = 20, height = 20, style }: { width?: number; height?: number; style?: React.CSSProperties; }) {
     return <svg width={width} height={height} viewBox="0 0 24 24" fill="currentColor" style={style}><path d="M2 5a3 3 0 0 1 3-3h3.93a2 2 0 0 1 1.66.9L12 5h7a3 3 0 0 1 3 3v11a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5Z" /></svg>;
@@ -195,7 +180,6 @@ function TokenModal({ rootProps }: { rootProps: any; }) {
     const [results, setResults] = useState<TokenResult[]>([]);
     const [checking, setChecking] = useState(false);
     const [done, setDone] = useState(false);
-    const [copied, setCopied] = useState(false);
     const [accountSearch, setAccountSearch] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
 
@@ -238,7 +222,13 @@ function TokenModal({ rootProps }: { rootProps: any; }) {
         const ns: Record<string, string> = {};
         for (const acc of accounts) {
             ns[acc.id] = "checking"; setStatuses({ ...ns });
-            try { const r = await Native.checkToken(acc.token); ns[acc.id] = r.valid ? "valid" : "invalid"; } catch { ns[acc.id] = "error"; }
+            try {
+                // decrypt que quand il faut
+                const decrypted = await Native.decryptStoredToken(acc.token);
+                const tokenToCheck = decrypted ?? acc.token;
+                const r = await Native.checkToken(tokenToCheck);
+                ns[acc.id] = r.valid ? "valid" : "invalid";
+            } catch { ns[acc.id] = "error"; }
             setStatuses({ ...ns });
             await new Promise(r => setTimeout(r, 400));
         }
@@ -358,9 +348,6 @@ function TokenModal({ rootProps }: { rootProps: any; }) {
                             }}>
                                 <FolderIcon width={12} height={12} style={{ marginRight: 4 }} /> Scan local Discords
                             </button>
-                            <button className="ti-verify-btn" style={{ marginRight: 6, opacity: copied ? 0.7 : 1 }} onClick={() => { copyMyToken(); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-                                {copied ? "Copied ✓" : "My Token"}
-                            </button>
                             <button className="ti-verify-btn" onClick={verifyAll} disabled={verifying || !loaded}>
                                 {verifying ? "Stopping..." : "Verify all"}
                             </button>
@@ -382,17 +369,10 @@ function TokenModal({ rootProps }: { rootProps: any; }) {
                                                             {st === "invalid" && <span className="ti-st ti-st--bad"><CrossIcon /></span>}
                                                             {st === "checking" && <span className="ti-st ti-st--loading">...</span>}
                                                         </span>
-                                                        <span className="ti-token-hidden" onClick={() => navigator.clipboard.writeText(a.token)} title="Copy token" style={{ cursor: "pointer" }}>••••••••••••••••••••••••</span>
+                                                        <span className="ti-token-hidden">••••••••••••••••••••••••</span>
                                                     </div>
                                                     <div className="ti-row-actions">
                                                         <button className="ti-switch-btn" onClick={() => switchToAccount(a.token, a.id)}>Switch</button>
-                                                        <button className="ti-del-btn" style={{ color: "#b9bbbe" }} title="Copy Token" onClick={() => {
-                                                            const native = (window as any).DiscordNative?.clipboard?.copy;
-                                                            if (typeof native === "function") native(a.token);
-                                                            else navigator.clipboard.writeText(a.token);
-                                                            const { showToast, Toasts } = (window as any).Vencord.Webpack.common;
-                                                            showToast("Token copied!", Toasts.Type.SUCCESS);
-                                                        }}><CopyIcon /></button>
                                                         <button className="ti-del-btn" title="Delete" onClick={() => removeAccount(a.id)}><TrashIcon /></button>
                                                     </div>
                                                 </div>

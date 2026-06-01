@@ -10,9 +10,16 @@ import definePlugin from "@utils/types";
 import { findByProps } from "@webpack";
 import { Forms, React, useState } from "@webpack/common";
 
-// Identique à TokenImporter — même logique de connexion
-function switchToAccount(token: string) {
-    try { window.localStorage.setItem("token", `"${token}"`); location.reload(); } catch {
+async function switchToAccount(token: string) {
+    try {
+        // si dispo
+        if ((window as any).SecureTokenStorage) {
+            await (window as any).SecureTokenStorage.store(token);
+        } else {
+            window.localStorage.setItem("token", `"${token}"`);
+        }
+        location.reload();
+    } catch {
         const iframe = document.createElement("iframe"); iframe.style.display = "none"; document.body.appendChild(iframe);
         try { (iframe as any).contentWindow.localStorage.token = `"${token}"`; } catch { }
         document.body.removeChild(iframe); location.reload();

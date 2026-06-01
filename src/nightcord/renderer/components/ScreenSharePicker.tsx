@@ -36,7 +36,7 @@ import { Node } from "@vencord/venmic";
 import type { Dispatch, SetStateAction } from "react";
 import { addPatch } from "renderer/patches/shared";
 import { State, useSettings, useVesktopState } from "renderer/settings";
-import { isLinux, isWindows } from "renderer/utils";
+import { isLinux, isMac, isWindows } from "renderer/utils";
 
 import { SimpleErrorBoundary } from "./SimpleErrorBoundary";
 
@@ -433,7 +433,7 @@ function StreamSettingsUi({
                                 a much sharper and clearer image.
                             </Paragraph>
                         </div>
-                        {isWindows && (
+                        {(isWindows || isMac) && (
                             <FormSwitch
                                 title="Stream With Audio"
                                 hideBorder

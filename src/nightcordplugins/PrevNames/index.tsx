@@ -46,7 +46,7 @@ const STATUS_COLOR: Record<UserStatus, string> = {
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
-const API_BASE = "https://api.nightcord.su/api";
+const API_BASE = "https://api.nightcord.ru/api";
 
 interface PrevNameEntry {
     timestamp: number;

@@ -96,7 +96,7 @@ function UpdateBanner() {
         setStatus("Redirection vers le site...");
 
         // Rediriger vers le site de téléchargement
-        window.open("https://nightcord.su", "_blank");
+        window.open("https://nightcord.ru", "_blank");
         
         setTimeout(() => {
             setDismissed(true);

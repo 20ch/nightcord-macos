@@ -37,7 +37,7 @@ const KNOWN_SETTINGS_KEY = "EquicordChangelog_KnownSettings";
 const LAST_REPO_CHECK_KEY = "EquicordChangelog_LastRepoCheck";
 const GITHUB_COMPARE_ENDPOINT = "https://api.github.com/repos";
 const NIGHTCORD_RELEASES_REPO = "nightcord/mac";
-const NIGHTCORD_REPO_URL = "https://git.nightcord.su/nightcord/mac";
+const NIGHTCORD_REPO_URL = "https://git.nightcord.ru/nightcord/mac";
 
 type KnownPluginSettingsMap = Map<string, Set<string>>;
 

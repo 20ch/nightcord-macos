@@ -110,8 +110,8 @@ function UpdaterTab() {
                     <div>
                         <Span size="sm" color="text-subtle">Website</Span>
                         <div>
-                            <Link href="https://nightcord.su" style={{ fontSize: 13 }}>
-                                nightcord.su
+                            <Link href="https://nightcord.ru" style={{ fontSize: 13 }}>
+                                nightcord.ru
                             </Link>
                         </div>
                     </div>

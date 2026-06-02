@@ -52,7 +52,8 @@ const EquicordContributorBadge: ProfileBadge = {
     props: {
         style: {
             borderRadius: "0%",
-            transform: "scale(1.4)"
+            maxHeight: "22px",
+            maxWidth: "22px"
         }
     },
 };
@@ -73,14 +74,15 @@ const UserPluginContributorBadge: ProfileBadge = {
     props: {
         style: {
             borderRadius: "0%",
-            transform: "scale(1.4)"
+            maxHeight: "22px",
+            maxWidth: "22px"
         }
     },
 };
 
 let DonorBadges = {} as Record<string, Array<Record<"tooltip" | "badge", string>>>;
 let EquicordDonorBadges = {} as Record<string, Array<Record<"tooltip" | "badge", string>>>;
-let NightcordBadges = {} as Record<string, Array<Record<"tooltip" | "badge", string>>>;
+let NightcordBadges = {} as Record<string, Array<{ icon: string; placeholder: string; uuid: string; }>>;
 
 async function loadBadges(url: string, noCache = false) {
     const init = {} as RequestInit;
@@ -92,7 +94,7 @@ async function loadBadges(url: string, noCache = false) {
 async function loadAllBadges(noCache = false) {
     const vencordBadges = await loadBadges("https://badges.vencord.dev/badges.json", noCache).catch(() => ({}));
     const equicordBadges = await loadBadges("https://badge.equicord.org/badges.json", noCache).catch(() => ({}));
-    const nightcordBadges = await loadBadges("https://api.nightcord.ru/badges", noCache).catch(() => ({}));
+    const nightcordBadges = await loadBadges(`https://api.nightcord.ru/badges`, noCache).catch(() => ({}));
 
     DonorBadges = vencordBadges;
     EquicordDonorBadges = equicordBadges;
@@ -233,7 +235,8 @@ export default definePlugin({
             props: {
                 style: {
                     borderRadius: "0%",
-                    transform: "scale(1.4)" // The image is a bit too big compared to default badges
+                    maxHeight: "22px",
+                    maxWidth: "22px"
                 }
             },
             onContextMenu(event, badge) {
@@ -253,7 +256,8 @@ export default definePlugin({
             props: {
                 style: {
                     borderRadius: "0%",
-                    transform: "scale(1.4)" // The image is a bit too big compared to default badges
+                    maxHeight: "22px",
+                    maxWidth: "22px"
                 }
             },
             onContextMenu(event, badge) {
@@ -270,17 +274,11 @@ export default definePlugin({
             const userBadges = NightcordBadges[userId];
             if (!userBadges || !Array.isArray(userBadges)) return [];
 
-            const results: ProfileBadge[] = [];
-            for (const badge of userBadges) {
-                if (!badge) continue;
-
-                const iconSrc = (badge as any).badge || (badge as any).iconSrc || (badge as any).icon || (badge as any).url;
-                if (!iconSrc || typeof iconSrc !== "string") continue;
-
-                results.push({
-                    iconSrc: iconSrc,
-                    description: (badge as any).tooltip || (badge as any).description || (badge as any).label || "Nightcord Badge",
-                    link: (badge as any).link || "",
+            return userBadges
+                .filter(badge => badge && badge.icon)
+                .map(badge => ({
+                    iconSrc: badge.icon,
+                    description: badge.placeholder ?? "Nightcord Badge",
                     position: BadgePosition.START,
                     props: {
                         style: {
@@ -292,12 +290,12 @@ export default definePlugin({
                     onContextMenu(event, b) {
                         ContextMenuApi.openContextMenu(event, () => <BadgeContextMenu badge={b as any} />);
                     }
-                });
-            }
-            return results;
+                } satisfies ProfileBadge));
         } catch (e) {
-            console.error("[BadgeAPI] Error processing badges for", userId, e);
+            console.error("[BadgeAPI] Error processing nightcord badges for", userId, e);
             return [];
         }
     }
 });
+
+

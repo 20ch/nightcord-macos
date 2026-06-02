@@ -36,7 +36,7 @@ import { Node } from "@vencord/venmic";
 import type { Dispatch, SetStateAction } from "react";
 import { addPatch } from "renderer/patches/shared";
 import { State, useSettings, useVesktopState } from "renderer/settings";
-import { isLinux, isMac, isWindows } from "renderer/utils";
+import { isLinux, isWindows } from "renderer/utils";
 
 import { SimpleErrorBoundary } from "./SimpleErrorBoundary";
 
@@ -433,7 +433,7 @@ function StreamSettingsUi({
                                 a much sharper and clearer image.
                             </Paragraph>
                         </div>
-                        {(isWindows || isMac) && (
+                        {isWindows && (
                             <FormSwitch
                                 title="Stream With Audio"
                                 hideBorder
@@ -776,6 +776,10 @@ function ModalComponent({
                                 ...settings
                             });
 
+                            // Wait longer on first launch — the media stack needs more time to settle
+                            const isFirstStream = !MediaEngineStore.getMediaEngine().connections.size;
+                            const delay = isFirstStream ? 800 : 100;
+
                             setTimeout(async () => {
                                 const conn = [...MediaEngineStore.getMediaEngine().connections].find(
                                     connection => connection.streamUserId === UserStore.getCurrentUser().id
@@ -803,7 +807,7 @@ function ModalComponent({
                                 } catch (e) {
                                     logger.error("Failed to apply constraints.", e);
                                 }
-                            }, 100);
+                            }, delay);
                         } catch (error) {
                             logger.error("Error while submitting stream.", error);
                         }

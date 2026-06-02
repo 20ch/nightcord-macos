@@ -11,11 +11,82 @@ import { DataStore } from "@api/index";
 import { EquicordDevs } from "@utils/constants";
 import { ModalRoot, ModalSize,openModal } from "@utils/modal";
 import definePlugin, { IconComponent, PluginNative } from "@utils/types";
-import { MediaEngineStore,React, Select, useEffect, useRef, useState } from "@webpack/common";
+import { Activity } from "@vencord/discord-types";
+import { ActivityFlags, ActivityType } from "@vencord/discord-types/enums";
+import { FluxDispatcher, MediaEngineStore,React, Select, useEffect, useRef, useState } from "@webpack/common";
 
 // ─── Native (IPC → main process) ─────────────────────────────────────────────
 
 const Native = VencordNative.pluginHelpers.SoundCordPlayer as PluginNative<typeof import("./native")>;
+
+// ─── Rich Presence ─────────────────────────────────────────────────────────────
+
+const APPLICATION_ID = "1253772057926303804";
+const SOCKET_ID = "SoundCordPlayer";
+
+let activityUpdateInterval: NodeJS.Timeout | undefined;
+
+function setActivity(activity: Activity | null) {
+    FluxDispatcher.dispatch({ type: "LOCAL_ACTIVITY_UPDATE", activity, socketId: SOCKET_ID });
+}
+
+async function getActivity(): Promise<Activity | null> {
+    const s = playerState;
+    if (!s.playing || !s.isPlaying) return null;
+
+    return {
+        application_id: APPLICATION_ID,
+        name: "SoundCloud",
+        details: s.playing.title,
+        state: s.playing.artist,
+        assets: {
+            large_image: s.playing.artworkUrl,
+            large_text: s.playing.title,
+            small_image: "https://a-v2.sndcdn.com/assets/images/sc-icon-512x512-2e5e8e2e.png",
+            small_text: "SoundCloud",
+        },
+        timestamps: {
+            start: Date.now() - (s.position * 1000),
+            end: Date.now() + ((s.duration - s.position) * 1000),
+        },
+        type: ActivityType.LISTENING,
+        flags: ActivityFlags.INSTANCE,
+    };
+}
+
+async function updateActivity() {
+    try {
+        const activity = await getActivity();
+        setActivity(activity);
+    } catch (e) {
+        console.error("[SoundCord] Failed to update activity:", e);
+        setActivity(null);
+    }
+}
+
+let activityListener: (() => void) | null = null;
+
+function initActivity() {
+    if (activityListener) return;
+    activityListener = () => {
+        updateActivity();
+    };
+    playerState.subscribe(activityListener);
+    updateActivity();
+    activityUpdateInterval = setInterval(updateActivity, 5000);
+}
+
+function cleanupActivity() {
+    if (activityListener) {
+        playerState.unsubscribe(activityListener);
+        activityListener = null;
+    }
+    if (activityUpdateInterval) {
+        clearInterval(activityUpdateInterval);
+        activityUpdateInterval = undefined;
+    }
+    setActivity(null);
+}
 
 // ─── SoundCord Icon ──────────────────────────────────────────────────────────
 
@@ -794,10 +865,12 @@ export default definePlugin({
     start() {
         fetchClientId().catch(() => { });
         initThumbar();
+        initActivity();
     },
 
     stop() {
         cleanupThumbar();
+        cleanupActivity();
         playerStop();
         playerInited = false;
     },

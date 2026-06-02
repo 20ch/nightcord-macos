@@ -80,6 +80,7 @@ export interface Settings {
     | undefined;
     disableMinSize: boolean;
     winNativeTitleBar: boolean;
+    seeAllCustomProfile: boolean;
     plugins: {
         [plugin: string]: {
             enabled: boolean;
@@ -136,6 +137,7 @@ const DefaultSettings: Settings = {
     macosVibrancyStyle: undefined,
     disableMinSize: false,
     winNativeTitleBar: false,
+    seeAllCustomProfile: true,
     plugins: {},
 
     uiElements: {
@@ -157,6 +159,8 @@ const DefaultSettings: Settings = {
         settingsSync: false,
         settingsSyncVersion: 0
     },
+
+    ignoreResetWarning: false,
 
     userCssVars: {},
 };

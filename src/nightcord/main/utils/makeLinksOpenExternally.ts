@@ -162,13 +162,13 @@ export function makeLinksOpenExternally(win: BrowserWindow) {
         let isCaptcha = false;
         if (url) {
             try {
-                const { hostname, pathname } = new URL(url);
+                const { hostname, pathname, searchParams } = new URL(url);
                 isCaptcha =
                     hostname.includes("hcaptcha.com") ||
                     hostname.includes("recaptcha.net") ||
                     (hostname.includes("google.com") && pathname.startsWith("/recaptcha")) ||
                     (hostname.includes("discord.com") && pathname.startsWith("/cdn-cgi/")) ||
-                    (DISCORD_HOSTNAMES.includes(hostname) && (pathname.includes("captcha")));
+                    (DISCORD_HOSTNAMES.includes(hostname) && (pathname.includes("captcha") || searchParams.has("captcha")));
             } catch {}
         }
 

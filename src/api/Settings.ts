@@ -81,6 +81,7 @@ export interface Settings {
     disableMinSize: boolean;
     winNativeTitleBar: boolean;
     seeAllCustomProfile: boolean;
+    syncOwnCustomProfile: boolean;
     plugins: {
         [plugin: string]: {
             enabled: boolean;
@@ -138,6 +139,7 @@ const DefaultSettings: Settings = {
     disableMinSize: false,
     winNativeTitleBar: false,
     seeAllCustomProfile: true,
+    syncOwnCustomProfile: false,
     plugins: {},
 
     uiElements: {

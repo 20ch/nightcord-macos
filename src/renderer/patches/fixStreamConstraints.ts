@@ -12,7 +12,11 @@ const logger = new Logger("VesktopStreamFixes");
 function fixAudioTrackConstraints(constraint: MediaTrackConstraints) {
     const target = constraint.advanced?.find(opt => Object.hasOwn(opt, "autoGainControl")) ?? constraint;
 
-    target.autoGainControl = MediaEngineStore.getAutomaticGainControl();
+    if (process.platform === "darwin") {
+        target.autoGainControl = false;
+    } else {
+        target.autoGainControl = MediaEngineStore.getAutomaticGainControl();
+    }
 }
 
 function fixVideoTrackConstraints(constraint: MediaTrackConstraints) {

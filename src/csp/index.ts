@@ -8,6 +8,7 @@ export const ImageSrc = [...ConnectSrc, "img-src"];
 export const CssSrc = ["style-src", "font-src"];
 export const ImageAndCssSrc = [...ImageSrc, ...CssSrc];
 export const ImageScriptsAndCssSrc = [...ImageAndCssSrc, "script-src", "worker-src"];
+export const ImageScriptsCssAndFrameSrc = [...ImageAndCssSrc, "script-src", "worker-src", "frame-src"];
 export const CSPSrc = ["style-src", "connect-src", "img-src", "frame-src", "font-src", "media-src", "worker-src"];
 
 export const CspPolicies: PolicyMap = {
@@ -66,15 +67,15 @@ export const CspPolicies: PolicyMap = {
     "*.soundcloud.com": CSPSrc,
 
     // hCaptcha (Discord captcha system)
-    "hcaptcha.com": ImageScriptsAndCssSrc,
-    "*.hcaptcha.com": ImageScriptsAndCssSrc,
-    "newassets.hcaptcha.com": ImageScriptsAndCssSrc,
-    "imgs.hcaptcha.com": ImageScriptsAndCssSrc,
-    "api2.hcaptcha.com": ImageScriptsAndCssSrc,
+    "hcaptcha.com": ImageScriptsCssAndFrameSrc,
+    "*.hcaptcha.com": ImageScriptsCssAndFrameSrc,
+    "newassets.hcaptcha.com": ImageScriptsCssAndFrameSrc,
+    "imgs.hcaptcha.com": ImageScriptsCssAndFrameSrc,
+    "api2.hcaptcha.com": ImageScriptsCssAndFrameSrc,
 
     // Cloudflare Turnstile / cdn-cgi captcha
-    "challenges.cloudflare.com": ImageScriptsAndCssSrc,
-    "*.cloudflare.com": ImageScriptsAndCssSrc,
+    "challenges.cloudflare.com": ImageScriptsCssAndFrameSrc,
+    "*.cloudflare.com": ImageScriptsCssAndFrameSrc,
 };
 
 const findHeader = (headers: PolicyMap, headerName: Lowercase<string>) => {

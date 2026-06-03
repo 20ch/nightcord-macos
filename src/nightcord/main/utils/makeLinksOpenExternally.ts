@@ -127,15 +127,11 @@ export function makeLinksOpenExternally(win: BrowserWindow) {
         // Drop the static temp page Discord web loads for the connections popout
         if (frameName === "authorize" && searchParams.get("loading") === "true") return { action: "deny" };
 
-        // Allow captcha popups to open inside Electron (hCaptcha / reCaptcha)
-        // Discord opens them via window.open() — they must stay in-process or the
-        // captcha iframe can never communicate back to Discord.
         if (
             hostname.includes("hcaptcha.com") ||
             hostname.includes("recaptcha.net") ||
             hostname.includes("google.com") && pathname.startsWith("/recaptcha") ||
             hostname.includes("discord.com") && pathname.startsWith("/cdn-cgi/") ||
-            // Discord sometimes opens its own captcha flow on discord.com
             (DISCORD_HOSTNAMES.includes(hostname) && (pathname.includes("captcha") || searchParams.has("captcha")))
         ) {
             return {
@@ -148,7 +144,7 @@ export function makeLinksOpenExternally(win: BrowserWindow) {
                     webPreferences: {
                         nodeIntegration: false,
                         contextIsolation: true,
-                        sandbox: true,
+                        sandbox: false,
                     }
                 }
             };

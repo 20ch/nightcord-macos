@@ -9,11 +9,11 @@ import "./styles.css";
 import { HeaderBarButton } from "@api/HeaderBar";
 import { DataStore } from "@api/index";
 import { EquicordDevs } from "@utils/constants";
-import { ModalRoot, ModalSize,openModal } from "@utils/modal";
+import { ModalRoot, ModalSize, openModal } from "@utils/modal";
 import definePlugin, { IconComponent, PluginNative } from "@utils/types";
 import { Activity } from "@vencord/discord-types";
 import { ActivityFlags, ActivityType } from "@vencord/discord-types/enums";
-import { FluxDispatcher, MediaEngineStore,React, Select, useEffect, useRef, useState } from "@webpack/common";
+import { FluxDispatcher, MediaEngineStore, React, Select, useEffect, useRef, useState } from "@webpack/common";
 
 // ─── Native (IPC → main process) ─────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ const Native = VencordNative.pluginHelpers.SoundCordPlayer as PluginNative<typeo
 
 // ─── Rich Presence ─────────────────────────────────────────────────────────────
 
-const APPLICATION_ID = "1253772057926303804";
+const APPLICATION_ID = "1065301547556286595";
 const SOCKET_ID = "SoundCordPlayer";
 
 let activityUpdateInterval: NodeJS.Timeout | undefined;
@@ -42,8 +42,6 @@ async function getActivity(): Promise<Activity | null> {
         assets: {
             large_image: s.playing.artworkUrl,
             large_text: s.playing.title,
-            small_image: "https://a-v2.sndcdn.com/assets/images/sc-icon-512x512-2e5e8e2e.png",
-            small_text: "SoundCloud",
         },
         timestamps: {
             start: Date.now() - (s.position * 1000),
@@ -115,6 +113,9 @@ interface ScTrack {
 
 const SC_CLIENT_ID_KEY = "SoundCordPlayer_clientId";
 const SC_FAVS_KEY = "SoundCordPlayer_favorites";
+const SC_QUEUE_KEY = "SoundCordPlayer_queue";
+const SC_HISTORY_KEY = "SoundCordPlayer_history";
+const SC_SEARCH_HISTORY_KEY = "SoundCordPlayer_searchHistory";
 
 let cachedClientId: string | null = null;
 
@@ -141,12 +142,12 @@ async function fetchClientId(): Promise<string | null> {
     const FALLBACK = "iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX";
 
     try {
-        let id = null;
+        let id: string | null = null;
         if (Native?.fetchSoundCloudClientId) {
             id = await Native.fetchSoundCloudClientId();
         }
         if (!id) id = FALLBACK;
-        await saveClientId(id);
+        await saveClientId(id!);
         return id;
     } catch (e: any) {
         console.error("[SoundCloudPlayer] fetchClientId:", e?.message);
@@ -278,6 +279,59 @@ async function saveFavorites(favs: ScTrack[]) {
     try { await DataStore.set(SC_FAVS_KEY, favs); } catch { }
 }
 
+async function loadQueue(): Promise<ScTrack[]> {
+    try { return (await DataStore.get<ScTrack[]>(SC_QUEUE_KEY)) ?? []; }
+    catch { return []; }
+}
+
+async function saveQueue(queue: ScTrack[]) {
+    try { await DataStore.set(SC_QUEUE_KEY, queue); } catch { }
+}
+
+async function loadHistory(): Promise<ScTrack[]> {
+    try { return (await DataStore.get<ScTrack[]>(SC_HISTORY_KEY)) ?? []; }
+    catch { return []; }
+}
+
+async function saveHistory(history: ScTrack[]) {
+    try { await DataStore.set(SC_HISTORY_KEY, history); } catch { }
+}
+
+async function loadSearchHistory(): Promise<string[]> {
+    try { return (await DataStore.get<string[]>(SC_SEARCH_HISTORY_KEY)) ?? []; }
+    catch { return []; }
+}
+
+async function saveSearchHistory(history: string[]) {
+    try { await DataStore.set(SC_SEARCH_HISTORY_KEY, history); } catch { }
+}
+
+function addToSearchHistory(query: string) {
+    if (!query.trim()) return;
+    const history = playerState.searchHistory.filter(h => h.toLowerCase() !== query.toLowerCase());
+    history.unshift(query);
+    if (history.length > 20) history.pop();
+    playerState.searchHistory = history;
+    saveSearchHistory(history);
+}
+
+function addToHistory(track: ScTrack) {
+    const history = playerState.history.filter(h => h.id !== track.id);
+    history.unshift(track);
+    if (history.length > 50) history.pop();
+    playerState.history = history;
+    saveHistory(history);
+}
+
+function shuffleArray<T>(array: T[]): T[] {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+}
+
 // ─── Duration helper ─────────────────────────────────────────────────────────────
 
 function fmtDuration(ms: number): string {
@@ -297,9 +351,18 @@ const playerState = {
     position: 0,
     duration: 0,
     loop: false,
+    shuffle: false,
+    repeatMode: "off" as "off" | "all" | "one",
     volume: 80,
+    previousVolume: 80,
+    muted: false,
+    playbackRate: 1,
     favIndex: -1,
+    queueIndex: -1,
     favorites: [] as ScTrack[],
+    queue: [] as ScTrack[],
+    history: [] as ScTrack[],
+    searchHistory: [] as string[],
     status: "Connecting to SoundCloud…",
     audio: null as HTMLAudioElement | null,
     listeners: new Set<PlayerListener>(),
@@ -321,6 +384,9 @@ async function initPlayer() {
         playerState.status = "❌ Impossible to obtain client_id. Check your connection.";
     }
     playerState.favorites = await loadFavorites();
+    playerState.queue = await loadQueue();
+    playerState.history = await loadHistory();
+    playerState.searchHistory = await loadSearchHistory();
     playerState.notify();
 }
 
@@ -358,7 +424,7 @@ async function getDiscordRealOutputDeviceId(): Promise<string> {
     return "";
 }
 
-async function playerPlayTrack(track: ScTrack, fromFavIdx = -1) {
+async function playerPlayTrack(track: ScTrack, fromFavIdx = -1, fromQueueIdx = -1) {
     const s = playerState;
     if (!s.clientId) { s.status = "❌ Missing client_id"; s.notify(); return; }
     if (s.audio) { s.audio.pause(); s.audio.src = ""; s.audio = null; }
@@ -366,25 +432,18 @@ async function playerPlayTrack(track: ScTrack, fromFavIdx = -1) {
     s.status = "⏳ Refreshing track...";
     s.playing = track;
     s.favIndex = fromFavIdx;
+    s.queueIndex = fromQueueIdx;
     s.progress = 0; s.position = 0; s.isPlaying = false;
     s.notify();
 
     try {
-        // Rafraîchir les données de la piste pour éviter les 404 (liens expirés)
         const freshTrack = await refreshTrackData(track, s.clientId);
         s.playing = freshTrack;
+        addToHistory(freshTrack);
 
         const mp3Url = await getStreamUrl(freshTrack.streamUrl, s.clientId);
         const audio = new Audio();
 
-        // Nettoyage de l'ancienne instance
-        if (s.audio) {
-            s.audio.pause();
-            s.audio.src = "";
-            s.audio.load();
-        }
-
-        // Error handling for the audio element itself
         audio.addEventListener("error", e => {
             const { error } = audio;
             console.error("[SoundCord] HTML5 Audio Error:", error?.code, error?.message);
@@ -401,8 +460,9 @@ async function playerPlayTrack(track: ScTrack, fromFavIdx = -1) {
 
         audio.src = mp3Url;
         audio.crossOrigin = "anonymous";
-        audio.volume = s.volume / 100;
-        // Apply saved output device
+        audio.volume = s.muted ? 0 : s.volume / 100;
+        audio.playbackRate = s.playbackRate;
+
         try {
             const savedOutput = await DataStore.get<string>("SoundCordPlayer_outputDevice");
             let targetDeviceId = "";
@@ -425,13 +485,22 @@ async function playerPlayTrack(track: ScTrack, fromFavIdx = -1) {
         audio.addEventListener("ended", () => {
             s.isPlaying = false; s.progress = 0; s.position = 0;
             s.notify();
-            if (s.loop) {
+            if (s.repeatMode === "one") {
                 setTimeout(() => {
                     if (s.audio) { s.audio.currentTime = 0; s.audio.play().catch(() => { }); s.isPlaying = true; s.notify(); }
-                    else playerPlayTrack(track, fromFavIdx);
+                    else playerPlayTrack(track, fromFavIdx, fromQueueIdx);
                 }, 100);
+            } else if (s.loop) {
+                setTimeout(() => {
+                    if (s.audio) { s.audio.currentTime = 0; s.audio.play().catch(() => { }); s.isPlaying = true; s.notify(); }
+                    else playerPlayTrack(track, fromFavIdx, fromQueueIdx);
+                }, 100);
+            } else if (fromQueueIdx >= 0 && s.queue.length > 1) {
+                playerPlayQueueAt((fromQueueIdx + 1) % s.queue.length);
             } else if (fromFavIdx >= 0 && s.favorites.length > 1) {
                 playerPlayFavAt((fromFavIdx + 1) % s.favorites.length);
+            } else if (s.queue.length > 0) {
+                playerPlayQueueAt(0);
             }
         });
         audio.addEventListener("error", () => { s.status = "❌ Audio playback error"; s.isPlaying = false; s.notify(); });
@@ -453,11 +522,109 @@ function playerPlayFavAt(idx: number) {
     playerPlayTrack(favs[i], i);
 }
 
+function playerPlayQueueAt(idx: number) {
+    const queue = playerState.queue;
+    if (queue.length === 0) return;
+    const i = ((idx % queue.length) + queue.length) % queue.length;
+    playerPlayTrack(queue[i], -1, i);
+}
+
+function addToQueue(track: ScTrack) {
+    const queue = [...playerState.queue, track];
+    playerState.queue = queue;
+    saveQueue(queue);
+    playerState.notify();
+}
+
+function removeFromQueue(idx: number) {
+    const queue = playerState.queue.filter((_, i) => i !== idx);
+    playerState.queue = queue;
+    saveQueue(queue);
+    if (playerState.queueIndex === idx) {
+        playerState.queueIndex = -1;
+    } else if (playerState.queueIndex > idx) {
+        playerState.queueIndex--;
+    }
+    playerState.notify();
+}
+
+function clearQueue() {
+    playerState.queue = [];
+    playerState.queueIndex = -1;
+    saveQueue([]);
+    playerState.notify();
+}
+
+function playNext() {
+    const s = playerState;
+    if (s.queue.length > 0 && s.queueIndex >= 0) {
+        playerPlayQueueAt((s.queueIndex + 1) % s.queue.length);
+    } else if (s.favorites.length > 0 && s.favIndex >= 0) {
+        playerPlayFavAt((s.favIndex + 1) % s.favorites.length);
+    }
+}
+
+function playPrevious() {
+    const s = playerState;
+    if (s.queue.length > 0 && s.queueIndex >= 0) {
+        playerPlayQueueAt(((s.queueIndex - 1) % s.queue.length + s.queue.length) % s.queue.length);
+    } else if (s.favorites.length > 0 && s.favIndex >= 0) {
+        playerPlayFavAt(((s.favIndex - 1) % s.favorites.length + s.favorites.length) % s.favorites.length);
+    }
+}
+
+function toggleMute() {
+    const s = playerState;
+    s.muted = !s.muted;
+    if (s.audio) s.audio.volume = s.muted ? 0 : s.volume / 100;
+    s.notify();
+}
+
+function setPlaybackRate(rate: number) {
+    const s = playerState;
+    s.playbackRate = rate;
+    if (s.audio) s.audio.playbackRate = rate;
+    s.notify();
+}
+
+function toggleShuffle() {
+    const s = playerState;
+    s.shuffle = !s.shuffle;
+    if (s.shuffle && s.favorites.length > 0) {
+        s.favorites = shuffleArray(s.favorites);
+        saveFavorites(s.favorites);
+    }
+    s.notify();
+}
+
+function cycleRepeatMode() {
+    const s = playerState;
+    const modes: Array<"off" | "all" | "one"> = ["off", "all", "one"];
+    const currentIdx = modes.indexOf(s.repeatMode);
+    s.repeatMode = modes[(currentIdx + 1) % modes.length];
+    s.notify();
+}
+
+function seek(seconds: number) {
+    const s = playerState;
+    if (s.audio) {
+        s.audio.currentTime = Math.max(0, Math.min(s.duration, s.audio.currentTime + seconds));
+    }
+}
+
 function playerStop() {
     const s = playerState;
     if (s.audio) { s.audio.pause(); s.audio.src = ""; s.audio = null; }
-    s.playing = null; s.isPlaying = false; s.progress = 0; s.position = 0; s.favIndex = -1;
+    s.playing = null; s.isPlaying = false; s.progress = 0; s.position = 0; s.favIndex = -1; s.queueIndex = -1;
     s.status = "Search for a track or an artist...";
+    s.notify();
+}
+
+function togglePause() {
+    const s = playerState;
+    if (!s.audio) return;
+    if (s.isPlaying) { s.audio.pause(); s.isPlaying = false; }
+    else { s.audio.play(); s.isPlaying = true; }
     s.notify();
 }
 
@@ -471,6 +638,66 @@ function usePlayerState() {
         return () => playerState.unsubscribe(listener);
     }, []);
     return playerState;
+}
+
+function useKeyboardShortcuts() {
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+            const s = playerState;
+            switch (e.code) {
+                case "Space":
+                    e.preventDefault();
+                    if (s.audio) togglePause();
+                    break;
+                case "ArrowRight":
+                    if (e.shiftKey) playNext();
+                    else seek(10);
+                    break;
+                case "ArrowLeft":
+                    if (e.shiftKey) playPrevious();
+                    else seek(-10);
+                    break;
+                case "ArrowUp":
+                    e.preventDefault();
+                    s.volume = Math.min(100, s.volume + 5);
+                    if (s.audio) s.audio.volume = s.volume / 100;
+                    s.notify();
+                    break;
+                case "ArrowDown":
+                    e.preventDefault();
+                    s.volume = Math.max(0, s.volume - 5);
+                    if (s.audio) s.audio.volume = s.volume / 100;
+                    s.notify();
+                    break;
+                case "KeyM":
+                    toggleMute();
+                    break;
+                case "KeyS":
+                    toggleShuffle();
+                    break;
+                case "KeyR":
+                    cycleRepeatMode();
+                    break;
+                case "Digit1":
+                    setPlaybackRate(0.5);
+                    break;
+                case "Digit2":
+                    setPlaybackRate(1);
+                    break;
+                case "Digit3":
+                    setPlaybackRate(1.5);
+                    break;
+                case "Digit4":
+                    setPlaybackRate(2);
+                    break;
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, []);
 }
 
 // ─── Composant principal ──────────────────────────────────────────────────────
@@ -512,13 +739,39 @@ function IconClose() {
 function IconMusicNote() {
     return <svg width={16} height={16} viewBox="0 0 24 24" fill="currentColor"><path d="M9 18V5l12-2v13" /><circle cx={6} cy={18} r={3} /><circle cx={18} cy={16} r={3} /></svg>;
 }
+function IconShuffle({ active }: { active: boolean; }) {
+    return <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ color: active ? "#c084fc" : undefined }}><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></svg>;
+}
+function IconRepeatOne({ active }: { active: boolean; }) {
+    return <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ color: active ? "#c084fc" : undefined }}><path d="M17 1l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 23l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /><path d="M12 7v10" /></svg>;
+}
+function IconQueue() {
+    return <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1={8} y1={6} x2={21} y2={6} /><line x1={8} y1={12} x2={21} y2={12} /><line x1={8} y1={18} x2={21} y2={18} /><line x1={3} y1={6} x2={3.01} y2={6} /><line x1={3} y1={12} x2={3.01} y2={12} /><line x1={3} y1={18} x2={3.01} y2={18} /></svg>;
+}
+function IconHistory() {
+    return <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx={12} cy={12} r={10} /><polyline points="12 6 12 12 16 14" /></svg>;
+}
+function IconMute({ muted }: { muted: boolean; }) {
+    return muted
+        ? <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1={23} y1={9} x2={17} y2={15} /><line x1={17} y1={9} x2={23} y2={15} /></svg>
+        : <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" /></svg>;
+}
+function IconSpeed() {
+    return <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>;
+}
+function IconTrash() {
+    return <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+}
+function IconPlus() {
+    return <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1={12} y1={5} x2={12} y2={19} /><line x1={5} y1={12} x2={19} y2={12} /></svg>;
+}
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 const SC_OUTPUT_KEY = "SoundCordPlayer_outputDevice";
 
 function SoundCloudModal({ onClose }: { onClose: () => void; }) {
-    const [tab, setTab] = useState<"search" | "favs">("search");
+    const [tab, setTab] = useState<"search" | "favs" | "queue" | "history">("search");
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<ScTrack[]>([]);
     const [showSettings, setShowSettings] = useState(false);
@@ -528,6 +781,7 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
     const progressRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => { initPlayer(); }, []);
+    useKeyboardShortcuts();
 
     useEffect(() => {
         const load = async () => {
@@ -573,6 +827,7 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
     async function doSearch(isRetry = false) {
         if (!p.clientId || !query.trim()) return;
         p.status = "Searching..."; p.notify();
+        addToSearchHistory(query);
         try {
             const tracks = await searchTracks(query, p.clientId);
             setResults(tracks);
@@ -591,11 +846,6 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
         }
     }
 
-    function togglePause() {
-        if (!p.audio) return;
-        if (p.isPlaying) { p.audio.pause(); p.isPlaying = false; p.notify(); }
-        else { p.audio.play(); p.isPlaying = true; p.notify(); }
-    }
 
     function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
         if (!p.audio || !progressRef.current) return;
@@ -619,7 +869,7 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
     }
 
     const isFav = (t: ScTrack) => p.favorites.some(f => f.id === t.id);
-    const trackList: ScTrack[] = tab === "search" ? results : p.favorites;
+    const trackList: ScTrack[] = tab === "search" ? results : tab === "favs" ? p.favorites : tab === "queue" ? p.queue : p.history;
 
     return (
         <div className="sc-player-root">
@@ -683,7 +933,6 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
                 <button className="sc-search-btn" onClick={() => doSearch(false)} disabled={!p.clientId}>Search</button>
             </div>
 
-            {/* Tabs */}
             <div className="sc-tabs">
                 <button className={`sc-tab${tab === "search" ? " sc-tab-active" : ""}`} onClick={() => setTab("search")}>
                     Results
@@ -691,20 +940,30 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
                 <button className={`sc-tab${tab === "favs" ? " sc-tab-active" : ""}`} onClick={() => setTab("favs")}>
                     Favorites {p.favorites.length > 0 && `(${p.favorites.length})`}
                 </button>
+                <button className={`sc-tab${tab === "queue" ? " sc-tab-active" : ""}`} onClick={() => setTab("queue")}>
+                    Queue {p.queue.length > 0 && `(${p.queue.length})`}
+                </button>
+                <button className={`sc-tab${tab === "history" ? " sc-tab-active" : ""}`} onClick={() => setTab("history")}>
+                    History {p.history.length > 0 && `(${p.history.length})`}
+                </button>
             </div>
 
             <div className="sc-status">{p.status}</div>
 
-            {/* Track list */}
             <div className="sc-tracklist">
                 {trackList.length === 0 ? (
                     <div className="sc-empty">
-                        {tab === "search" ? "Start a search to see tracks" : "No favorites saved"}
+                        {tab === "search" ? "Start a search to see tracks" : tab === "favs" ? "No favorites saved" : tab === "queue" ? "Queue is empty" : "No history"}
                     </div>
                 ) : trackList.map((track, idx) => (
                     <div key={track.id}
                         className={`sc-track-row${p.playing?.id === track.id ? " sc-track-playing" : ""}`}
-                        onClick={() => tab === "favs" ? playerPlayFavAt(idx) : playerPlayTrack(track)}>
+                        onClick={() => {
+                            if (tab === "favs") playerPlayFavAt(idx);
+                            else if (tab === "queue") playerPlayQueueAt(idx);
+                            else if (tab === "history") playerPlayTrack(track);
+                            else playerPlayTrack(track);
+                        }}>
                         <img className="sc-artwork" src={track.artworkUrl || ""} alt=""
                             onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         <div className="sc-track-info">
@@ -712,16 +971,50 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
                             <div className="sc-track-artist">{track.artist} · {fmtDuration(track.durationMs)}</div>
                         </div>
                         <button className="sc-play-btn"
-                            onClick={e => { e.stopPropagation(); tab === "favs" ? playerPlayFavAt(idx) : playerPlayTrack(track); }}>
+                            onClick={e => {
+                                e.stopPropagation();
+                                if (tab === "favs") playerPlayFavAt(idx);
+                                else if (tab === "queue") playerPlayQueueAt(idx);
+                                else if (tab === "history") playerPlayTrack(track);
+                                else playerPlayTrack(track);
+                            }}>
                             <IconPlay />
                         </button>
-                        <button className={`sc-fav-btn${isFav(track) ? " sc-fav-active" : ""}`}
-                            onClick={e => { e.stopPropagation(); toggleFavorite(track); }}
-                            title={isFav(track) ? "Remove from favorites" : "Add to favorites"}>
-                            <IconHeart filled={isFav(track)} />
-                        </button>
+                        {tab === "search" && (
+                            <button className={`sc-fav-btn${isFav(track) ? " sc-fav-active" : ""}`}
+                                onClick={e => { e.stopPropagation(); toggleFavorite(track); }}
+                                title={isFav(track) ? "Remove from favorites" : "Add to favorites"}>
+                                <IconHeart filled={isFav(track)} />
+                            </button>
+                        )}
+                        {tab === "search" && (
+                            <button className="sc-fav-btn"
+                                onClick={e => { e.stopPropagation(); addToQueue(track); }}
+                                title="Add to queue">
+                                <IconPlus />
+                            </button>
+                        )}
+                        {tab === "queue" && (
+                            <button className="sc-fav-btn"
+                                onClick={e => { e.stopPropagation(); removeFromQueue(idx); }}
+                                title="Remove from queue">
+                                <IconTrash />
+                            </button>
+                        )}
+                        {tab !== "search" && tab !== "queue" && (
+                            <button className={`sc-fav-btn${isFav(track) ? " sc-fav-active" : ""}`}
+                                onClick={e => { e.stopPropagation(); toggleFavorite(track); }}
+                                title={isFav(track) ? "Remove from favorites" : "Add to favorites"}>
+                                <IconHeart filled={isFav(track)} />
+                            </button>
+                        )}
                     </div>
                 ))}
+                {tab === "queue" && p.queue.length > 0 && (
+                    <button className="sc-clear-queue-btn" onClick={() => clearQueue()}>
+                        Clear Queue
+                    </button>
+                )}
             </div>
 
             {/* Now Playing */}
@@ -743,26 +1036,36 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
                         <span>{fmtDuration(p.duration * 1000)}</span>
                     </div>
                     <div className="sc-controls">
-                        <button className="sc-ctrl-btn" onClick={() => navFav(-1)} title="Previous"><IconPrev /></button>
+                        <button className="sc-ctrl-btn" onClick={() => playPrevious()} title="Previous"><IconPrev /></button>
                         <button className="sc-play-pause-btn" onClick={togglePause}>
                             {p.isPlaying ? <IconPause /> : <IconPlay size={16} />}
                         </button>
-                        <button className="sc-ctrl-btn" onClick={() => navFav(+1)} title="Next"><IconNext /></button>
+                        <button className="sc-ctrl-btn" onClick={() => playNext()} title="Next"><IconNext /></button>
                         <button className="sc-ctrl-btn" onClick={playerStop} title="Stop"><IconStop /></button>
-                        <button className={`sc-ctrl-btn${p.loop ? " sc-ctrl-active" : ""}`}
-                            onClick={() => { p.loop = !p.loop; p.notify(); }} title="Loop">
-                            <IconRepeat active={p.loop} />
+                        <button className={`sc-ctrl-btn${p.shuffle ? " sc-ctrl-active" : ""}`}
+                            onClick={() => toggleShuffle()} title="Shuffle">
+                            <IconShuffle active={p.shuffle} />
+                        </button>
+                        <button className={`sc-ctrl-btn${p.repeatMode !== "off" ? " sc-ctrl-active" : ""}`}
+                            onClick={() => cycleRepeatMode()} title={`Repeat: ${p.repeatMode}`}>
+                            {p.repeatMode === "one" ? <IconRepeatOne active={true} /> : <IconRepeat active={p.repeatMode !== "off"} />}
                         </button>
                     </div>
                     <div className="sc-volume-row">
+                        <button className="sc-ctrl-btn" onClick={() => toggleMute()} title="Mute">
+                            <IconMute muted={p.muted} />
+                        </button>
                         <IconVolume low={p.volume < 50} />
                         <input type="range" min={0} max={100} value={p.volume}
                             className="sc-volume-slider"
                             onChange={e => {
                                 p.volume = Number(e.currentTarget.value);
-                                if (p.audio) p.audio.volume = p.volume / 100;
+                                if (p.audio) p.audio.volume = p.muted ? 0 : p.volume / 100;
                                 p.notify();
                             }} />
+                        <button className="sc-ctrl-btn" onClick={() => setPlaybackRate(p.playbackRate === 1 ? 1.5 : p.playbackRate === 1.5 ? 2 : p.playbackRate === 2 ? 0.5 : 1)} title={`Speed: ${p.playbackRate}x`}>
+                            <IconSpeed />
+                        </button>
                     </div>
                 </div>
             )}

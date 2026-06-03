@@ -53,8 +53,6 @@ const LASTFM_PLACEHOLDER_IMAGE_HASH = "2a96cbd8b46e442fc41c2b86b821562f";
 
 const logger = new Logger("LastFMRichPresence");
 
-let updateInterval: NodeJS.Timeout | undefined;
-
 async function getApplicationAsset(key: string): Promise<string> {
     return (await ApplicationAssetUtils.fetchAssetIds(DISCORD_APP_ID, [key]))[0];
 }
@@ -176,11 +174,6 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         default: true,
     },
-    showAlbumCover: {
-        description: "Show album cover. Disabling this will display a placeholder. Useful if your Music has inappropriate art",
-        type: OptionType.BOOLEAN,
-        default: true,
-    }
 });
 
 export default definePlugin({
@@ -203,12 +196,11 @@ export default definePlugin({
 
     start() {
         this.updatePresence();
-        updateInterval = setInterval(() => { this.updatePresence(); }, 16000);
+        this.updateInterval = setInterval(() => { this.updatePresence(); }, 16000);
     },
 
     stop() {
-        clearInterval(updateInterval);
-        updateInterval = undefined;
+        clearInterval(this.updateInterval);
     },
 
     async fetchTrackData(): Promise<TrackData | null> {
@@ -258,7 +250,7 @@ export default definePlugin({
     },
 
     getLargeImage(track: TrackData): string | undefined {
-        if (settings.store.showAlbumCover && track.imageUrl && !track.imageUrl.includes(LASTFM_PLACEHOLDER_IMAGE_HASH))
+        if (track.imageUrl && !track.imageUrl.includes(LASTFM_PLACEHOLDER_IMAGE_HASH))
             return track.imageUrl;
 
         if (settings.store.missingArt === "placeholder")

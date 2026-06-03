@@ -56,21 +56,21 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ theme, enabledThemeLinks, 
         const isEnabled = enabledThemeLinks.includes(themeUrl);
 
         if (isEnabled) {
+            // Remove from enabledThemeLinks (ThemeLibrary source of truth)
             const nextEnabled = enabledThemeLinks.filter(link => link !== themeUrl);
             setEnabledThemeLinks(nextEnabled);
             Settings.enabledThemeLinks = nextEnabled;
+            // Also remove from themeLinks to keep both arrays in sync and avoid
+            // the theme re-appearing through the Online Themes tab.
             Settings.themeLinks = Settings.themeLinks.filter(link => link !== themeUrl);
             return;
         }
 
+        // Add to enabledThemeLinks only — Themes.ts merges both arrays automatically.
+        // We intentionally do NOT add to themeLinks here to avoid duplicates.
         const nextEnabled = [...enabledThemeLinks, themeUrl];
         setEnabledThemeLinks(nextEnabled);
         Settings.enabledThemeLinks = nextEnabled;
-        if (!Settings.themeLinks.includes(themeUrl)) {
-            Settings.themeLinks = [...Settings.themeLinks, themeUrl];
-        }
-        // If user enabled a theme from library, online themes must be active globally.
-        Settings.enableOnlineThemes = true;
     };
 
     const handleThemeAttributesCheck = () => {

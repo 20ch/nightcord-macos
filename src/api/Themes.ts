@@ -26,6 +26,9 @@ import { userStyleRootNode, vencordRootNode } from "./Styles";
 let style: HTMLStyleElement;
 let themesStyle: HTMLStyleElement;
 
+// Track active online theme <link> elements for non-blocking loading
+const onlineThemeLinks = new Map<string, HTMLLinkElement>();
+
 async function toggle(isEnabled: boolean) {
     if (!style) {
         if (isEnabled) {
@@ -42,10 +45,65 @@ async function toggle(isEnabled: boolean) {
         style.disabled = !isEnabled;
 }
 
+/**
+ * Collect all active online theme URLs from both sources:
+ * - Settings.enabledThemeLinks  (ThemeLibrary plugin)
+ * - Settings.themeLinks         (Online Themes tab — manual URLs)
+ *
+ * Both are merged, deduplicated, and filtered by light/dark preference.
+ */
+function collectOnlineLinks(activeTheme: "light" | "dark" | undefined): string[] {
+    const { enabledThemeLinks, themeLinks } = Settings;
+
+    // Merge both arrays and deduplicate
+    const allRawLinks = [...new Set([...enabledThemeLinks, ...themeLinks])];
+
+    return allRawLinks
+        .map(rawLink => {
+            const match = /^@(light|dark) (.*)/.exec(rawLink);
+            if (!match) return rawLink;
+            const [, mode, link] = match;
+            return mode === activeTheme ? link : null;
+        })
+        .filter((link): link is string => link !== null && link.trim().length > 0);
+}
+
+/**
+ * Apply online themes using non-blocking <link rel="stylesheet"> elements
+ * instead of synchronous @import, which causes Discord to freeze while
+ * waiting for remote CSS to download.
+ *
+ * Each URL gets its own <link> element created/removed as needed, so
+ * toggling a single theme only touches that one element — no full reload.
+ */
+function applyOnlineThemesNonBlocking(links: string[]) {
+    const newSet = new Set(links);
+
+    // Remove links no longer active
+    for (const [url, el] of onlineThemeLinks.entries()) {
+        if (!newSet.has(url)) {
+            el.remove();
+            onlineThemeLinks.delete(url);
+        }
+    }
+
+    // Add new links
+    for (const url of links) {
+        if (onlineThemeLinks.has(url)) continue;
+        const el = document.createElement("link");
+        el.rel = "stylesheet";
+        el.type = "text/css";
+        el.href = url.trim();
+        // Append to userStyleRootNode so it lives in our isolated style tree
+        userStyleRootNode.appendChild(el);
+        onlineThemeLinks.set(url, el);
+    }
+}
+
 async function initThemes() {
     themesStyle ??= createAndAppendStyle("vencord-themes", userStyleRootNode);
 
-    const { enabledThemeLinks, enabledThemes } = Settings;
+    const { enabledThemes } = Settings;
 
     const { ThemeStore } = require("@webpack/common/stores") as typeof import("@webpack/common/stores");
 
@@ -55,29 +113,26 @@ async function initThemes() {
         ? undefined
         : ThemeStore.theme === "light" ? "light" : "dark";
 
-    const links = enabledThemeLinks
-        .map(rawLink => {
-            const match = /^@(light|dark) (.*)/.exec(rawLink);
-            if (!match) return rawLink;
+    // --- Online themes: non-blocking <link> approach (no freeze on slow CDN) ---
+    const onlineLinks = collectOnlineLinks(activeTheme);
+    applyOnlineThemesNonBlocking(onlineLinks);
 
-            const [, mode, link] = match;
-            return mode === activeTheme ? link : null;
-        })
-        .filter(link => link !== null);
+    // --- Local / desktop themes: @import is fine (vencord:// = local file, instant) ---
+    const localImports: string[] = [];
 
     if (IS_WEB) {
         for (const theme of enabledThemes) {
             const themeData = await VencordNative.themes.getThemeData(theme);
             if (!themeData) continue;
             const blob = new Blob([themeData], { type: "text/css" });
-            links.push(URL.createObjectURL(blob));
+            localImports.push(URL.createObjectURL(blob));
         }
     } else {
         const localThemes = enabledThemes.map(theme => `vencord:///themes/${theme}?v=${Date.now()}`);
-        links.push(...localThemes);
+        localImports.push(...localThemes);
     }
 
-    themesStyle.textContent = links.map(link => `@import url("${link.trim()}");`).join("\n");
+    themesStyle.textContent = localImports.map(link => `@import url("${link.trim()}");`).join("\n");
     updatePopoutWindows();
 }
 
@@ -109,7 +164,9 @@ document.addEventListener("DOMContentLoaded", () => {
     toggle(Settings.useQuickCss);
     SettingsStore.addChangeListener("useQuickCss", toggle);
 
+    // Listen to ALL theme-related settings so any change triggers a reload
     SettingsStore.addChangeListener("enabledThemeLinks", initThemes);
+    SettingsStore.addChangeListener("themeLinks", initThemes);
     SettingsStore.addChangeListener("enabledThemes", initThemes);
 
     window.addEventListener("message", event => {

@@ -49,14 +49,12 @@ async function toggle(isEnabled: boolean) {
  * Collect all active online theme URLs from both sources:
  * - Settings.enabledThemeLinks  (ThemeLibrary plugin)
  * - Settings.themeLinks         (Online Themes tab — manual URLs)
- *
- * Both are merged, deduplicated, and filtered by light/dark preference.
  */
 function collectOnlineLinks(activeTheme: "light" | "dark" | undefined): string[] {
-    const { enabledThemeLinks, themeLinks } = Settings;
+    const { enabledThemeLinks } = Settings;
 
-    // Merge both arrays and deduplicate
-    const allRawLinks = [...new Set([...enabledThemeLinks, ...themeLinks])];
+    // Only use enabled themes
+    const allRawLinks = [...new Set(enabledThemeLinks)];
 
     return allRawLinks
         .map(rawLink => {

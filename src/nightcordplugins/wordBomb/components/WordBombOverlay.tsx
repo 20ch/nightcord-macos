@@ -8,13 +8,43 @@ import { ComponentDispatch,createRoot, React, ReactDOM, useEffect, useRef, useSt
 
 import { getGroqKey } from "../../nightcordAI/groqManager";
 
-const DICT_URLS = [
-    "https://raw.githubusercontent.com/words/an-array-of-french-words/master/index.json",
-    "https://raw.githubusercontent.com/nightcordoff/dicofr/refs/heads/main/dico.txt"
-];
-
-// Quelques mots de secours au cas où le chargement échoue
-const FALLBACK_WORDS = ["maison", "chat", "chien", "soleil", "pomme", "banane", "ordinateur", "clavier", "souris", "ecran", "table", "chaise", "fenetre", "porte", "voiture", "avion", "bateau", "train", "velo", "moto"];
+// Language configuration
+const LANG_CONFIG = {
+    en: {
+        name: "English",
+        dictUrls: [
+            "https://raw.githubusercontent.com/jeremy-rifkin/Wordlist/refs/heads/master/res/a.txt"
+        ],
+        fallbackWords: ["house", "cat", "dog", "sun", "apple", "banana", "computer", "keyboard", "mouse", "screen", "table", "chair", "window", "door", "car", "plane", "boat", "train", "bike", "motorcycle"],
+        charRegex: /^[a-z]+$/i,
+        wikiLang: "en",
+        themeRegex: /[a-z]+/g,
+        aiPrompt: (word: string) => `Give a very short definition (1 simple sentence) for the following word, explaining what it is concretely, without giving its grammatical nature. Do it obligatorily in English. Word: "${word}"`
+    },
+    fr: {
+        name: "Français",
+        dictUrls: [
+            "https://raw.githubusercontent.com/words/an-array-of-french-words/master/index.json",
+            "https://raw.githubusercontent.com/nightcordoff/dicofr/refs/heads/main/dico.txt"
+        ],
+        fallbackWords: ["maison", "chat", "chien", "soleil", "pomme", "banane", "ordinateur", "clavier", "souris", "ecran", "table", "chaise", "fenetre", "porte", "voiture", "avion", "bateau", "train", "velo", "moto"],
+        charRegex: /^[a-zœæéèêëàâäîïôöùûüç]+$/i,
+        wikiLang: "fr",
+        themeRegex: /[a-zàâçéèêëîïôûùüÿñæœ]+/g,
+        aiPrompt: (word: string) => `Donne une très courte définition (1 phrase simple) pour le mot suivant, en expliquant ce que c'est concrètement, sans donner sa nature grammaticale. Fais-le obligatoirement en français. Mot: "${word}"`
+    },
+    de: {
+        name: "Deutsch",
+        dictUrls: [
+            "https://gist.githubusercontent.com/MarvinJWendt/2f4f4154b8ae218600eb091a5706b5f4/raw/36b70dd6be330aa61cd4d4cdfda6234dcb0b8784/wordlist-german.txt"
+        ],
+        fallbackWords: ["haus", "katze", "hund", "sonne", "apfel", "banane", "computer", "tastatur", "maus", "bildschirm", "tisch", "stuhl", "fenster", "tür", "auto", "flugzeug", "boot", "zug", "fahrrad", "motorrad"],
+        charRegex: /^[a-zäöüß]+$/i,
+        wikiLang: "de",
+        themeRegex: /[a-zäöüß]+/g,
+        aiPrompt: (word: string) => `Gib eine sehr kurze Definition (1 einfacher Satz) für das folgende Wort, indem du erklärst, was es konkret ist, ohne seine grammatikalische Natur anzugeben. Mache dies obligatorisch auf Deutsch. Wort: "${word}"`
+    }
+};
 
 let overlayRoot: any = null;
 let overlayContainer: HTMLDivElement | null = null;
@@ -63,8 +93,9 @@ function unmountOverlay() {
 }
 
 export function WordBombOverlay() {
+    const [language, setLanguage] = useState(() => getSetting("wb_language", "fr"));
     const [alphabet, setAlphabet] = useState<string[]>("abcdefghijklmnopqrstuvwxyz".split(""));
-    const [dictionary, setDictionary] = useState<string[]>(FALLBACK_WORDS);
+    const [dictionary, setDictionary] = useState<string[]>(LANG_CONFIG[language as keyof typeof LANG_CONFIG].fallbackWords);
     const [syllable, setSyllable] = useState("");
     const [status, setStatus] = useState("Ready!");
     const [history, setHistory] = useState<{ alphabet: string[], word: string; }[]>([]);
@@ -88,7 +119,8 @@ export function WordBombOverlay() {
     const [noSpace, setNoSpace] = useState(() => getSetting("wb_noSpace", "false") === "true"); // Load dictionary
     useEffect(() => {
         setStatus("Loading dictionaries...");
-        Promise.all(DICT_URLS.map(url => fetch(url).then(async res => {
+        const config = LANG_CONFIG[language as keyof typeof LANG_CONFIG];
+        Promise.all(config.dictUrls.map(url => fetch(url).then(async res => {
             if (!res.ok) return [];
             if (url.endsWith(".json")) return await res.json();
             const text = await res.text();
@@ -112,8 +144,8 @@ export function WordBombOverlay() {
                         // 3. Filtrage des abréviations (tout en majuscule)
                         if (w === w.toUpperCase() && w.length > 1) return false;
 
-                        // 4. Caractères français uniquement
-                        return /^[a-zœæéèêëàâäîïôöùûüç]+$/i.test(w);
+                        // 4. Caractères spécifiques à la langue
+                        return config.charRegex.test(w);
                     })
                     .map(w => w.toLowerCase());
 
@@ -123,7 +155,7 @@ export function WordBombOverlay() {
                     setDictionary(finalSet);
                     setStatus(`Ready! (${finalSet.length} words)`);
                 } else {
-                    setDictionary(FALLBACK_WORDS);
+                    setDictionary(config.fallbackWords);
                     setStatus("Dict. unavailable");
                 }
             })
@@ -131,7 +163,7 @@ export function WordBombOverlay() {
                 console.error("[WordBomb] Dictionary load error:", err);
                 setStatus("Dict. error (fallback active)");
             });
-    }, []);
+    }, [language]);
 
     // Theme logic
     useEffect(() => {
@@ -139,12 +171,13 @@ export function WordBombOverlay() {
             setThemeWords(new Set());
             return;
         }
-        fetch(`https://fr.wikipedia.org/w/api.php?action=query&list=search&srsearch=${theme}&utf8=&format=json&srlimit=1`)
+        const config = LANG_CONFIG[language as keyof typeof LANG_CONFIG];
+        fetch(`https://${config.wikiLang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${theme}&utf8=&format=json&srlimit=1`)
             .then(r => r.json())
             .then(d => {
                 if (d.query?.search?.[0]?.pageid) {
                     const pageId = d.query.search[0].pageid;
-                    return fetch(`https://fr.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&pageids=${pageId}&format=json`);
+                    return fetch(`https://${config.wikiLang}.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&pageids=${pageId}&format=json`);
                 }
                 throw new Error("No page");
             })
@@ -154,13 +187,13 @@ export function WordBombOverlay() {
                 if (pages) {
                     const text = Object.values(pages)[0] as any;
                     if (text && text.extract) {
-                        const words = text.extract.toLowerCase().match(/[a-zàâçéèêëîïôûùüÿñæœ]+/g) || [];
+                        const words = text.extract.toLowerCase().match(config.themeRegex) || [];
                         const unique = new Set<string>(words.filter((w: string) => w.length > 3));
                         setThemeWords(unique);
                     }
                 }
             }).catch(() => setThemeWords(new Set()));
-    }, [theme]);
+    }, [theme, language]);
 
     // Draggable logic
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -357,6 +390,7 @@ export function WordBombOverlay() {
             if (!groqKey) {
                 setDefinition("Error: Groq API key missing in NightcordAI.");
             } else {
+                const config = LANG_CONFIG[language as keyof typeof LANG_CONFIG];
                 fetch("https://api.groq.com/openai/v1/chat/completions", {
                     method: "POST",
                     headers: {
@@ -369,7 +403,7 @@ export function WordBombOverlay() {
                         max_tokens: 150,
                         messages: [{
                             role: "user",
-                            content: `Donne une très courte définition (1 phrase simple) pour le mot suivant, en expliquant ce que c'est concrètement, sans donner sa nature grammaticale. Fais-le obligatoirement en français. Mot: "${word}"`
+                            content: config.aiPrompt(word)
                         }]
                     }),
                 })
@@ -497,6 +531,21 @@ export function WordBombOverlay() {
                     </>
                 ) : (
                     <div className="nc-wb-settings">
+                        <div className="nc-wb-setting-item" style={{ marginBottom: "10px" }}>
+                            <label style={{ fontSize: "13px", color: "#10b981", fontWeight: "bold" }}>🌍 Language</label>
+                            <select
+                                value={language}
+                                onChange={e => {
+                                    setLanguage(e.target.value);
+                                    setSetting("wb_language", e.target.value);
+                                }}
+                                style={{ width: "100%", padding: "6px", borderRadius: "6px", border: "none", background: "#374151", color: "white", marginTop: "5px", outline: "none" }}
+                            >
+                                <option value="en">English</option>
+                                <option value="fr">Français</option>
+                                <option value="de">Deutsch</option>
+                            </select>
+                        </div>
                         <div className="nc-wb-setting-item" style={{ marginBottom: "10px" }}>
                             <label>Speed (LPS): {lps}</label>
                             <input

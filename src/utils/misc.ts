@@ -25,7 +25,15 @@ import { EQUICORD_HELPERS, EquicordDevsById, GUILD_ID, SUPPORT_CHANNEL_ID, Venco
  * classes("one", "two") => "one two"
  */
 export function classes(...classes: Array<string | null | undefined | false>) {
-    return classes.filter(Boolean).join(" ");
+    let res = "";
+    for (let i = 0; i < classes.length; i++) {
+        const c = classes[i];
+        if (c) {
+            if (res) res += " ";
+            res += c;
+        }
+    }
+    return res;
 }
 
 /**

@@ -47,12 +47,18 @@ export type PropsFilter = Array<string>;
 export type CodeFilter = Array<string | RegExp>;
 export type StoreNameFilter = string;
 
-export const stringMatches = (s: string, filter: CodeFilter) =>
-    filter.every(f =>
-        typeof f === "string"
-            ? s.includes(f)
-            : (f.global && (f.lastIndex = 0), f.test(s))
-    );
+export const stringMatches = (s: string, filter: CodeFilter) => {
+    for (let i = 0; i < filter.length; i++) {
+        const f = filter[i];
+        if (typeof f === "string") {
+            if (!s.includes(f)) return false;
+        } else {
+            if (f.global) f.lastIndex = 0;
+            if (!f.test(s)) return false;
+        }
+    }
+    return true;
+};
 
 export function makeClassNameRegex(className: string) {
     return new RegExp(`(?:\\b|_)${escapeRegExp(className)}(?:\\b|_)`);
@@ -62,7 +68,12 @@ export const filters = {
     byProps: (...props: PropsFilter): FilterFn =>
         props.length === 1
             ? m => m[props[0]] !== void 0
-            : m => props.every(p => m[p] !== void 0),
+            : m => {
+                for (let i = 0; i < props.length; i++) {
+                    if (m[props[i]] === void 0) return false;
+                }
+                return true;
+            },
 
     byCode: (...code: CodeFilter): FilterFn => {
         const parsedCode = code.map(canonicalizeMatch);
@@ -101,10 +112,21 @@ export const filters = {
         const regexes = classes.map(makeClassNameRegex);
 
         return (m: any) => {
-            if (typeof m !== "object") return false;
+            if (typeof m !== "object" || m === null) return false;
 
-            const values = Object.values(m);
-            return regexes.every(cls => values.some(v => typeof v === "string" && cls.test(v)));
+            for (let i = 0; i < regexes.length; i++) {
+                const cls = regexes[i];
+                let found = false;
+                for (const key in m) {
+                    const v = m[key];
+                    if (typeof v === "string" && cls.test(v)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return false;
+            }
+            return true;
         };
     }
 };

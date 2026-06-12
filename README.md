@@ -3,71 +3,72 @@
 
 # Nightcord
 
-**Un client Discord personnalisé conçu pour ceux qui se soucient vraiment du fonctionnement de Discord.**
+**Un client Discord personnalisé, transparent et performant, conçu pour ceux qui veulent garder le contrôle.**
 
-[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord\&logoColor=white)](https://discord.gg/nightcord)
-[![License](https://img.shields.io/badge/license-GPL%20v3-a855f7)](./LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-3b82f6.svg?logo=apple\&logoColor=white)](https://github.com/20ch/nightcord-macos)
-[![Website](https://img.shields.io/badge/website-nightcord.lovable.app-5865F2?logo=googlechrome\&logoColor=white)](https://nightcord.lovable.app)
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/nightcord)
+[![License](https://img.shields.io/badge/License-GPL%20v3-a855f7?style=flat-square)](./LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS-3b82f6?style=flat-square&logo=apple&logoColor=white)](https://github.com/20ch/nightcord-macos)
+[![Website](https://img.shields.io/badge/Website-nightcord.lovable.app-00dfa2?style=flat-square&logo=googlechrome&logoColor=white)](https://nightcord.lovable.app)
 
----
+<p align="left">
+Nightcord est un fork d'Equicord, lui-même basé sur Vencord. Notre philosophie est simple : nous avons supprimé l'obfuscation, nettoyé la base de code, et apporté nos propres optimisations en conservant ce qui fonctionne. Pas de superflu, pas de télémétrie inutile. Juste de la performance.
+</p>
 
 </div>
 
-Nightcord est un fork d'Equicord, qui lui-même repose sur Vencord. Nous avons supprimé l'obfuscation, nettoyé le code, apporté nos propres améliorations, et conservé ce qui fonctionne. Pas de superflu, pas de blabla.
+## ⚡ Fonctionnalités
 
----
+* **Démarrage ultra-rapide** — L'absence d'obfuscation permet au client de se charger instantanément tout en réduisant l'impact sur le processeur et la mémoire RAM.
+* **Mises à jour silencieuses** — Nightcord vérifie automatiquement les mises à jour en arrière-plan à chaque démarrage pour ne jamais vous couper dans votre élan.
+* **Écosystème de Plugins** — Entièrement compatible avec les plugins existants. Vous pouvez également installer des plugins communautaires directement via leurs liens Git.
+* **Audio optimisé** — Intégration de modules vocaux avec accélération matérielle pour un son plus clair, plus stable et mieux équilibré dès l'installation.
+* **Interface épurée** — Animations fluidifiées, icônes personnalisées et ajustements ergonomiques pour une meilleure expérience au quotidien.
 
-## Ce qu'il contient
+## 🗺️ Roadmap & Évolution
 
-* **Démarrage plus rapide** — sans obfuscation, le client se charge nettement plus vite et consomme moins de CPU et de RAM.
-* **Mises à jour automatiques** — vérifie les mises à jour en arrière-plan au démarrage et les applique silencieusement.
-* **Support des plugins** — compatible avec l'écosystème de plugins existant. Installez des plugins de la communauté directement via des liens Git.
-* **Meilleur audio** — modules vocaux optimisés matériellement pour un audio plus clair et plus fort dès le départ.
-* **Style personnalisé** — interface plus fluide, icônes personnalisées, et diverses améliorations de qualité de vie.
+- [x] **Fix Captchas** — Résolution des problèmes liés aux vérifications de sécurité Discord.
+- [ ] **Système de suggestions** — Intégration d'un module pour recueillir les retours et idées de la communauté directement.
+- [ ] **Optimisations continues** — Amélioration constante de la légèreté du client et suivi des versions amont.
 
----
+## 📦 Installation (macOS)
 
-## Installation (MacOS)
+### Méthode Standard
+1. Téléchargez la dernière version de **`Nightcord.dmg`** depuis l'onglet Releases.
+2. Ouvrez le fichier `.dmg` et glissez Nightcord dans votre dossier **Applications**.
 
-1. Téléchargez **`Nightcord.dmg`**
-2. **Double-cliquez et ouvrez**
+> ⚠️ **Note de sécurité Apple ("Fichier endommagé") :**
+> Si macOS bloque l'ouverture de l'application avec un message indiquant que le fichier est endommagé ou provient d'un développeur non identifié, ouvrez votre terminal et exécutez la commande suivante :
+> ``bash
+> xattr -d com.apple.quarantine /Applications/Nightcord.app
+> ``
 
-## Correction (fichier Mac "endommagé" / blocage de sécurité Apple) :
-xattr -d com.apple.quarantine /path/to/file
-Ensuite, essayez de rouvrir le fichier
+## 🛠️ Build depuis les sources
 
-### Clone & Build
+Si vous préférez compiler le client vous-même, suivez ces étapes :
 
 ```bash
-git clone https://github.com/20ch/nightcord-macos.git
-cd nightcord
+# Cloner le dépôt
+git clone [https://github.com/20ch/nightcord-macos.git](https://github.com/20ch/nightcord-macos.git)
+cd nightcord-macos
+
+# Installer les dépendances
 pnpm install -r
 pnpm add -D react react-dom
+
+# Autoriser les builds et packager le client
 pnpm approve-builds
 pnpm run package:dir
+
 ```
 
-## Dépôt
+## 🤝 Remerciements
 
-Code source :
+Nightcord n'existerait pas sans le travail colossal d'**[Equicord](https://github.com/Equicord/Equicord)** et de **[Vencord](https://github.com/Vendicated/Vencord)**. Une immense partie des fonctionnalités de ce client repose sur leurs bases. Nous tenons à exprimer notre profonde gratitude envers leurs développeurs et contributeurs respectifs pour leur dévouement et leur esprit open-source. Nous prenons simplement une direction différente, mais leur travail reste la fondation de ce projet.
 
-https://github.com/20ch/nightcord-macos
+Je suis **atomic** (connu sous le pseudo **20ch** sur Discord). Je n'ai pas été impliqué dans le passé historique de Nightcord et je suis uniquement responsable de la maintenance et du développement de ce fork spécifique.
 
----
+## 🛑 Avertissement
 
-## Remerciements
+*Nightcord n'est en aucun cas affilié, associé ou approuvé par Discord Inc.*
 
-Nightcord n'existerait pas sans [Equicord](https://github.com/Equicord/Equicord) et [Vencord](https://github.com/Vendicated/Vencord). Une immense partie de ce qui rend ce projet fonctionnel provient directement de leurs projets. Nous en sommes pleinement conscients et apprécions sincèrement tout ce qu'ils ont construit — nous prenons simplement une direction différente. Un grand merci à tous ceux qui ont contribué aux deux projets.
-
-Sans les développeurs et contributeurs de Vencord et Equicord, rien de tout cela n'aurait été possible. Leur travail acharné, leur dévouement et leur passion ont rendu ce projet réalisable. Je tiens à exprimer ma profonde gratitude envers chaque personne qui a contribué à ces projets incroyables.
-
-Je suis **atomic**, connu sous le pseudo **20ch** sur Discord. Je ne suis pas impliqué dans le passé de Nightcord et je ne suis responsable que de ce fork spécifique.
-
----
-
-## Avertissement
-
-*Nightcord n'est affilié d'aucune manière à Discord Inc.*
-
-L'utilisation de clients tiers est techniquement contraire aux Conditions d'Utilisation de Discord. Utilisez-le à vos propres risques.
+L'utilisation de clients tiers modifiés est techniquement contraire aux Conditions d'Utilisation (ToS) de Discord. Utilisez ce logiciel en toute conscience et à vos propres risques.

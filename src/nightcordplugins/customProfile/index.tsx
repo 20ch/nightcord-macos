@@ -136,6 +136,7 @@ interface FakeConnection {
     type: string;
     name: string;
     verified: boolean;
+    following?: string;
     followers?: string;
     likes?: string;
 }
@@ -760,12 +761,51 @@ function getConnectionInitials(type: string) {
     return (platform?.label ?? type).replace(/[^a-z0-9]/gi, "").slice(0, 2).toUpperCase() || "CN";
 }
 
+function getConnectionStat(value?: string) {
+    const trimmed = value?.trim();
+    return trimmed || undefined;
+}
+
+function buildConnectionMetadata(connection: FakeConnection) {
+    const following = getConnectionStat(connection.following);
+    const followers = getConnectionStat(connection.followers);
+    const likes = getConnectionStat(connection.likes);
+    const metadata: Record<string, any> = {};
+
+    if (following) {
+        metadata.following = following;
+        metadata.following_count = following;
+        metadata.followings_count = following;
+    }
+    if (followers) {
+        metadata.followers = followers;
+        metadata.follower_count = followers;
+        metadata.followers_count = followers;
+    }
+    if (likes) {
+        metadata.likes = likes;
+        metadata.like_count = likes;
+        metadata.likes_count = likes;
+    }
+
+    if (following || followers || likes) {
+        metadata.stats = {
+            ...(following && { following, following_count: following, followingCount: following }),
+            ...(followers && { followers, follower_count: followers, followers_count: followers, followerCount: followers }),
+            ...(likes && { likes, like_count: likes, likes_count: likes, likeCount: likes }),
+        };
+    }
+
+    return metadata;
+}
+
 function FakeConnectionEditor({ connections, onChange }: { connections: FakeConnection[]; onChange: (connections: FakeConnection[]) => void; }) {
     const [editingId, setEditingId] = React.useState<string | null>(null);
     const [newConnection, setNewConnection] = React.useState<Partial<FakeConnection>>({
         type: "tiktok",
         name: "",
         verified: false,
+        following: "",
         followers: "",
         likes: "",
     });
@@ -777,11 +817,12 @@ function FakeConnectionEditor({ connections, onChange }: { connections: FakeConn
             type: newConnection.type!,
             name: newConnection.name,
             verified: newConnection.verified || false,
+            following: newConnection.following,
             followers: newConnection.followers,
             likes: newConnection.likes,
         };
         onChange([...connections, connection]);
-        setNewConnection({ type: "tiktok", name: "", verified: false, followers: "", likes: "" });
+        setNewConnection({ type: "tiktok", name: "", verified: false, following: "", followers: "", likes: "" });
     }
 
     function updateConnection(id: string, updates: Partial<FakeConnection>) {
@@ -831,6 +872,12 @@ function FakeConnectionEditor({ connections, onChange }: { connections: FakeConn
                                             />
                                             <input
                                                 className="cp-input"
+                                                placeholder={t("Following (optional)")}
+                                                value={conn.following || ""}
+                                                onChange={e => updateConnection(conn.id, { following: e.target.value })}
+                                            />
+                                            <input
+                                                className="cp-input"
                                                 placeholder={t("Followers (optional)")}
                                                 value={conn.followers || ""}
                                                 onChange={e => updateConnection(conn.id, { followers: e.target.value })}
@@ -864,8 +911,9 @@ function FakeConnectionEditor({ connections, onChange }: { connections: FakeConn
                                             </div>
                                             <div className="cp-connection-meta">
                                                 <span className="cp-connection-platform">{platform?.label || conn.type}</span>
-                                                {(conn.followers || conn.likes) && (
+                                                {(conn.following || conn.followers || conn.likes) && (
                                                     <span className="cp-connection-stats">
+                                                        {conn.following && <span>{conn.following} following</span>}
                                                         {conn.followers && <span>{conn.followers} followers</span>}
                                                         {conn.likes && <span>{conn.likes} likes</span>}
                                                     </span>
@@ -898,6 +946,12 @@ function FakeConnectionEditor({ connections, onChange }: { connections: FakeConn
                             placeholder={t("Username")}
                             value={newConnection.name}
                             onChange={e => setNewConnection({ ...newConnection, name: e.target.value })}
+                        />
+                        <input
+                            className="cp-input"
+                            placeholder={t("Following (optional)")}
+                            value={newConnection.following}
+                            onChange={e => setNewConnection({ ...newConnection, following: e.target.value })}
                         />
                         <input
                             className="cp-input"
@@ -1433,7 +1487,7 @@ export default definePlugin({
                     replace: "connectionName:$self.patchConnectionName($1,$2),connection:$self.patchConnection($2)"
                 },
                 {
-                    match: /verified:(\i)(?=.{0,200}connectionName)/,
+                    match: /verified:(\i)(?=.{0,200}connectionName:\i,connection:(\i))/,
                     replace: "verified:$self.patchVerified($1,$2)"
                 }
             ]
@@ -1749,10 +1803,11 @@ export default definePlugin({
                     type: fc.type,
                     name: fc.name,
                     verified: fc.verified,
-                    metadata: {
-                        followers: fc.followers,
-                        likes: fc.likes,
-                    }
+                    metadata: buildConnectionMetadata(fc),
+                    _fake: true,
+                    _fakeFollowing: getConnectionStat(fc.following),
+                    _fakeFollowers: getConnectionStat(fc.followers),
+                    _fakeLikes: getConnectionStat(fc.likes),
                 }));
                 merged.connectedAccounts = [...(profile.connectedAccounts || []), ...fakeConnectedAccounts];
             }
@@ -1843,10 +1898,11 @@ export default definePlugin({
                     name: fc.name,
                     verified: fc.verified,
                     integrations: [],
-                    metadata: {},
+                    metadata: buildConnectionMetadata(fc),
                     _fake: true,
-                    _fakeFollowers: fc.followers,
-                    _fakeLikes: fc.likes,
+                    _fakeFollowing: getConnectionStat(fc.following),
+                    _fakeFollowers: getConnectionStat(fc.followers),
+                    _fakeLikes: getConnectionStat(fc.likes),
                 }));
                 merged.connectedAccounts = [...(profile.connectedAccounts || []), ...fakeConnectedAccounts];
             }
@@ -1966,6 +2022,9 @@ export default definePlugin({
             // Check if this is a fake connection
             if (connection._fake) {
                 let displayName = connection.name;
+                if (connection._fakeFollowing) {
+                    displayName += ` • ${connection._fakeFollowing} following`;
+                }
                 if (connection._fakeFollowers) {
                     displayName += ` • ${connection._fakeFollowers} followers`;
                 }

@@ -7,11 +7,52 @@
 import { Logger } from "@Nightcord/types/utils";
 import { currentSettings } from "renderer/components/ScreenSharePicker";
 import { State } from "renderer/settings";
-import { isLinux } from "renderer/utils";
+import { isLinux, isMac } from "renderer/utils";
 
 const logger = new Logger("NightcordStreamFixes");
 
-if (isLinux) {
+const virtualMacAudioNames = ["blackhole", "loopback", "soundflower", "vb-cable", "vb audio", "vbcable", "screen audio", "system audio"];
+
+async function getMacAudioDeviceId(preferredDeviceId?: string) {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(device => device.kind === "audioinput");
+        const preferredDevice = audioInputs.find(device => device.deviceId === preferredDeviceId);
+        if (preferredDevice) return preferredDevice.deviceId;
+
+        return audioInputs.find(device => {
+            const label = device.label.toLowerCase();
+            return virtualMacAudioNames.some(name => label.includes(name));
+        })?.deviceId ?? null;
+    } catch (error) {
+        logger.error("Failed to enumerate macOS audio devices.", error);
+        return null;
+    }
+}
+
+async function addAudioTrack(stream: MediaStream, deviceId: string) {
+    const audio = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            deviceId: {
+                exact: deviceId
+            },
+            autoGainControl: false,
+            echoCancellation: false,
+            noiseSuppression: false,
+            channelCount: 2,
+            sampleRate: 48000,
+            sampleSize: 16
+        }
+    });
+
+    stream.getAudioTracks().forEach(track => {
+        stream.removeTrack(track);
+        track.stop();
+    });
+    stream.addTrack(audio.getAudioTracks()[0]);
+}
+
+if (isLinux || isMac) {
     const original = navigator.mediaDevices.getDisplayMedia;
 
     async function getVirtmic() {
@@ -26,48 +67,42 @@ if (isLinux) {
 
     navigator.mediaDevices.getDisplayMedia = async function (opts) {
         const stream = await original.call(this, opts);
-        const id = await getVirtmic();
 
-        const frameRate = Number(State.store.screenshareQuality?.frameRate ?? 30);
-        const height = Number(State.store.screenshareQuality?.resolution ?? 720);
-        const width = Math.round(height * (16 / 9));
-        const track = stream.getVideoTracks()[0];
+        if (isMac && currentSettings?.audio) {
+            const id = await getMacAudioDeviceId(currentSettings.macAudioDeviceId);
+            if (id) {
+                await addAudioTrack(stream, id).catch(e => logger.error("Failed to add macOS audio track.", e));
+            }
+        }
 
-        track.contentHint = String(currentSettings?.contentHint);
+        if (isLinux) {
+            const id = await getVirtmic();
+            const frameRate = Number(State.store.screenshareQuality?.frameRate ?? 30);
+            const height = Number(State.store.screenshareQuality?.resolution ?? 720);
+            const width = Math.round(height * (16 / 9));
+            const track = stream.getVideoTracks()[0];
 
-        const constraints = {
-            ...track.getConstraints(),
-            frameRate: { min: frameRate, ideal: frameRate },
-            width: { min: 640, ideal: width, max: width },
-            height: { min: 480, ideal: height, max: height },
-            advanced: [{ width: width, height: height }],
-            resizeMode: "none"
-        };
+            track.contentHint = String(currentSettings?.contentHint);
 
-        track
-            .applyConstraints(constraints)
-            .then(() => {
-                logger.info("Applied constraints successfully. New constraints: ", track.getConstraints());
-            })
-            .catch(e => logger.error("Failed to apply constraints.", e));
+            const constraints = {
+                ...track.getConstraints(),
+                frameRate: { min: frameRate, ideal: frameRate },
+                width: { min: 640, ideal: width, max: width },
+                height: { min: 480, ideal: height, max: height },
+                advanced: [{ width: width, height: height }],
+                resizeMode: "none"
+            };
 
-        if (id) {
-            const audio = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    deviceId: {
-                        exact: id
-                    },
-                    autoGainControl: false,
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    channelCount: 2,
-                    sampleRate: 48000,
-                    sampleSize: 16
-                }
-            });
+            track
+                .applyConstraints(constraints)
+                .then(() => {
+                    logger.info("Applied constraints successfully. New constraints: ", track.getConstraints());
+                })
+                .catch(e => logger.error("Failed to apply constraints.", e));
 
-            stream.getAudioTracks().forEach(t => stream.removeTrack(t));
-            stream.addTrack(audio.getAudioTracks()[0]);
+            if (id) {
+                await addAudioTrack(stream, id);
+            }
         }
 
         return stream;

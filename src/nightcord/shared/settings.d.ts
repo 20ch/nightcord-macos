@@ -49,6 +49,7 @@ export interface Settings {
 
     audio?: {
         workaround?: boolean;
+        macAudioDeviceId?: string;
 
         deviceSelect?: boolean;
         granularSelect?: boolean;

@@ -36,7 +36,7 @@ import { Node } from "@vencord/venmic";
 import type { Dispatch, SetStateAction } from "react";
 import { addPatch } from "renderer/patches/shared";
 import { State, useSettings, useVesktopState } from "renderer/settings";
-import { isLinux, isWindows } from "renderer/utils";
+import { isLinux, isMac, isWindows } from "renderer/utils";
 
 import { SimpleErrorBoundary } from "./SimpleErrorBoundary";
 
@@ -63,6 +63,7 @@ interface StreamSettings {
     contentHint?: string;
     includeSources?: AudioSources;
     excludeSources?: AudioSources;
+    macAudioDeviceId?: string;
 }
 
 export interface StreamPick extends StreamSettings {
@@ -433,7 +434,7 @@ function StreamSettingsUi({
                                 a much sharper and clearer image.
                             </Paragraph>
                         </div>
-                        {isWindows && (
+                        {(isWindows || isMac) && (
                             <FormSwitch
                                 title="Stream With Audio"
                                 hideBorder
@@ -444,6 +445,16 @@ function StreamSettingsUi({
                         )}
                     </section>
                 </div>
+
+                {isMac && settings.audio && (
+                    <AudioSourcePickerMac
+                        deviceId={settings.macAudioDeviceId}
+                        setDeviceId={deviceId => {
+                            Settings.audio = { ...Settings.audio, macAudioDeviceId: deviceId };
+                            setSettings(s => ({ ...s, macAudioDeviceId: deviceId }));
+                        }}
+                    />
+                )}
 
                 {isLinux && (
                     <AudioSourcePickerLinux
@@ -457,6 +468,73 @@ function StreamSettingsUi({
                     />
                 )}
             </Card>
+        </div>
+    );
+}
+
+function isMacVirtualAudioDevice(device: MediaDeviceInfo) {
+    const label = device.label.toLowerCase();
+    return ["blackhole", "loopback", "soundflower", "vb-cable", "vb audio", "vbcable", "screen audio", "system audio"]
+        .some(name => label.includes(name));
+}
+
+function AudioSourcePickerMac({
+    deviceId,
+    setDeviceId
+}: {
+    deviceId?: string;
+    setDeviceId: (deviceId?: string) => void;
+}) {
+    const [audioSourcesSignal, refreshAudioSources] = useForceUpdater(true);
+    const [devices, _, loading] = useAwaiter(async () => {
+        let devices = await navigator.mediaDevices.enumerateDevices();
+
+        if (devices.some(device => device.kind === "audioinput" && !device.label)) {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(e => {
+                logger.error("Failed to request microphone access for macOS audio devices.", e);
+                return null;
+            });
+
+            stream?.getTracks().forEach(track => track.stop());
+            devices = await navigator.mediaDevices.enumerateDevices();
+        }
+
+        return devices.filter(device => device.kind === "audioinput");
+    }, {
+        fallbackValue: [] as MediaDeviceInfo[],
+        deps: [audioSourcesSignal]
+    });
+
+    const selectedDeviceId = deviceId ?? "";
+    const options = [
+        { label: "Auto Detect Virtual Audio", value: "", default: !selectedDeviceId },
+        ...devices.map((device, index) => ({
+            label: `${device.label || `Audio Device ${index + 1}`}${isMacVirtualAudioDevice(device) ? " (Recommended)" : ""}`,
+            value: device.deviceId,
+            default: device.deviceId === selectedDeviceId
+        }))
+    ];
+
+    return (
+        <div className={cl("audio-sources")}>
+            <section>
+                <Heading tag="h5">{loading ? "Loading Audio Devices..." : "Audio Source"}</Heading>
+                <SimpleErrorBoundary>
+                    <Select
+                        options={options}
+                        isSelected={(value: string) => value === selectedDeviceId}
+                        select={(value: string) => setDeviceId(value || undefined)}
+                        serialize={String}
+                        popoutPosition="top"
+                    />
+                </SimpleErrorBoundary>
+            </section>
+            <div className={cl("settings-buttons")}>
+                <Button variant="secondary" onClick={refreshAudioSources} className={cl("settings-button")}>
+                    <RestartIcon className={cl("settings-button-icon")} />
+                    Refresh Audio Sources
+                </Button>
+            </div>
         </div>
     );
 }
@@ -720,11 +798,13 @@ function ModalComponent({
     close: () => void;
     skipPicker: boolean;
 }) {
+    const Settings = useSettings();
     const [selected, setSelected] = useState<string | undefined>(skipPicker ? screens[0].id : void 0);
     const [settings, setSettings] = useState<StreamSettings>({
         contentHint: "motion",
         audio: true,
-        includeSources: "None"
+        includeSources: "None",
+        macAudioDeviceId: Settings.audio?.macAudioDeviceId
     });
     const qualitySettings = (useVesktopState().screenshareQuality ??= {
         resolution: "720",

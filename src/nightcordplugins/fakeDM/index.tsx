@@ -266,6 +266,95 @@ function injectCall(
     }
 }
 
+// ─── Nitro gift injection ───────────────────────────────────────────────────────
+function injectNitro(
+    channelId: string,
+    sender: any,
+    giftType: "nitro" | "nitro_basic" | "nitro_full",
+    date: Date,
+    persistedId?: string
+) {
+    const actualDate = persistedId ? date : randomSeconds(date);
+    const id = persistedId ?? uniqueSnowflake(actualDate);
+
+    // Create realistic Nitro gift embed based on Discord's actual structure
+    const isNitroBasic = giftType === "nitro_basic";
+    const giftSkuId = isNitroBasic ? "844674372864663552" : "844674372864663552";
+    
+    // Discord gift embed structure matching the HTML provided
+    const embed = {
+        type: "rich",
+        title: `Tu as offert un abonnement !`,
+        description: "Si tu veux récupérer ce cadeau pour ton usage personnel, vas-y, fais-toi plaisir. Promis, on ne juge pas :)",
+        color: 0x5865F2,
+        thumbnail: {
+            url: "https://cdn.discordapp.com/attachments/814223302520254564/1084277055257960538/nitro_gift.png",
+            proxy_url: "https://media.discordapp.net/attachments/814223302520254564/1084277055257960538/nitro_gift.png"
+        },
+        author: {
+            name: sender.globalName || sender.username,
+            icon_url: avatarUrl(sender)
+        },
+        footer: {
+            text: "Gift"
+        }
+    };
+
+    // Add button component for "Open Gift" matching the HTML structure
+    const components = [{
+        type: 1, // ACTION_ROW
+        components: [{
+            type: 2, // BUTTON
+            style: 5, // LINK
+            label: "Ouvrir le cadeau",
+            url: "https://discord.com/promotions/nitro",
+            emoji: {
+                name: "🎁"
+            }
+        }]
+    }];
+
+    FluxDispatcher.dispatch({
+        type: "MESSAGE_CREATE",
+        channelId,
+        message: {
+            attachments: [],
+            components: components,
+            embeds: [embed],
+            mention_roles: [],
+            mentions: [],
+            author: buildAuthor(sender),
+            channel_id: channelId,
+            content: "",
+            edited_timestamp: null,
+            flags: 0,
+            id,
+            mention_everyone: false,
+            nonce: id,
+            pinned: false,
+            timestamp: actualDate.toISOString(),
+            tts: false,
+            type: 0,
+        },
+        optimistic: false,
+        isPushNotification: false,
+    });
+    registerFake(channelId, id);
+
+    if (!persistedId) {
+        const fakes = loadPersisted();
+        fakes.push({
+            type: "message",
+            channelId,
+            authorId: sender.id,
+            content: `[NITRO_GIFT:${giftType}]`,
+            timestamp: actualDate.toISOString(),
+            snowflakeId: id,
+        });
+        savePersisted(fakes);
+    }
+}
+
 // ─── Restore persisted fakes on startup ──────────────────────────────────────
 let _restoreHandler: (() => void) | null = null;
 
@@ -286,7 +375,14 @@ function doRestore() {
         if (f.type === "message") {
             const author = UserStore.getUser(f.authorId);
             if (!author) continue;
-            inject(f.channelId, author, f.content, new Date(f.timestamp), f.snowflakeId);
+            
+            // Check if this is a nitro gift
+            if (f.content.startsWith("[NITRO_GIFT:")) {
+                const giftType = f.content.match(/\[NITRO_GIFT:(.*?)\]/)?.[1] as "nitro" | "nitro_basic" | "nitro_full" || "nitro";
+                injectNitro(f.channelId, author, giftType, new Date(f.timestamp), f.snowflakeId);
+            } else {
+                inject(f.channelId, author, f.content, new Date(f.timestamp), f.snowflakeId);
+            }
         } else {
             const caller = UserStore.getUser(f.callerId);
             const other = UserStore.getUser(f.otherId);
@@ -350,8 +446,8 @@ function FakeDMPanel({ onClose, btnRect }: { onClose(): void; btnRect: DOMRect; 
     const members = getChannelMembers(); // set for both 1:1 and group DMs
     const isInDMOrGroup = !!ch; // true for type 1 AND type 3
 
-    // Mode: "message" | "call"
-    const [mode, setMode] = React.useState<"message" | "call">("message");
+    // Mode: "message" | "call" | "nitro"
+    const [mode, setMode] = React.useState<"message" | "call" | "nitro">("message");
 
     // Message mode state — for groups we use a member ID string; for 1:1 we keep "me"/"other"
     const [senderId, setSenderId] = React.useState<string>(() => me?.id ?? "");
@@ -364,6 +460,10 @@ function FakeDMPanel({ onClose, btnRect }: { onClose(): void; btnRect: DOMRect; 
     });
     const [callMissed, setCallMissed] = React.useState(false);
     const [callDuration, setCallDuration] = React.useState("5");
+
+    // Nitro mode state
+    const [nitroSenderId, setNitroSenderId] = React.useState<string>(() => me?.id ?? "");
+    const [nitroGiftType, setNitroGiftType] = React.useState<"nitro" | "nitro_basic" | "nitro_full">("nitro");
 
     const [text, setText] = React.useState("");
     const [dateStr, setDateStr] = React.useState(() => toLocal(new Date()));
@@ -421,6 +521,17 @@ function FakeDMPanel({ onClose, btnRect }: { onClose(): void; btnRect: DOMRect; 
         setDateStr(toLocal(new Date(date.getTime() + 60_000)));
     }
 
+    function sendNitro() {
+        if (!channelId) return;
+        const senderUser = members.find(m => m.id === nitroSenderId) ?? me;
+        if (!senderUser) return;
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) { setMsg("Invalid Date!", false); return; }
+        injectNitro(channelId, senderUser, nitroGiftType, date);
+        setMsg("Nitro gift injected ✓", true);
+        setDateStr(toLocal(new Date(date.getTime() + 60_000)));
+    }
+
     // For 1:1 DMs keep the simple two-button sender row; for groups use a select
     const meName = (me as any)?.globalName || me?.username || "Me";
     const otherName = other?.globalName || other?.username || "Other";
@@ -466,7 +577,7 @@ function FakeDMPanel({ onClose, btnRect }: { onClose(): void; btnRect: DOMRect; 
                 onMouseUp={e => e.stopPropagation()}
             >
                 <div className="fdm-header">
-                    <span className="fdm-title">{mode === "message" ? "✏ Fake DM" : "📞 Fake Call"}{isGroup ? " (Group)" : ""}</span>
+                    <span className="fdm-title">{mode === "message" ? "✏ Fake DM" : mode === "call" ? "📞 Fake Call" : "💎 Fake Nitro"}{isGroup ? " (Group)" : ""}</span>
                     <button className="fdm-close" onClick={onClose}>✕</button>
                 </div>
 
@@ -474,10 +585,56 @@ function FakeDMPanel({ onClose, btnRect }: { onClose(): void; btnRect: DOMRect; 
                 <div style={{ display: "flex", gap: 6, padding: "0 12px 10px" }}>
                     <button onClick={() => setMode("message")} style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: mode === "message" ? "#5865f2" : "rgba(255,255,255,0.07)", color: mode === "message" ? "#fff" : "rgba(255,255,255,0.5)" }}>💬 Message</button>
                     <button onClick={() => setMode("call")} style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: mode === "call" ? "#5865f2" : "rgba(255,255,255,0.07)", color: mode === "call" ? "#fff" : "rgba(255,255,255,0.5)" }}>📞 Call</button>
+                    <button onClick={() => setMode("nitro")} style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: mode === "nitro" ? "#ff73fa" : "rgba(255,255,255,0.07)", color: mode === "nitro" ? "#fff" : "rgba(255,255,255,0.5)" }}>💎 Nitro</button>
                 </div>
 
                 {!isInDMOrGroup ? (
                     <div style={{ padding: "16px 14px", color: "rgba(255,255,255,0.45)", fontSize: 13, textAlign: "center" }}>Open a DM or group DM to use FakeDM.</div>
+                ) : mode === "nitro" ? (
+                    <>
+                        {isGroup ? (
+                            <MemberSelect members={members} value={nitroSenderId} onChange={setNitroSenderId} label="From :" />
+                        ) : (
+                            <div className="fdm-sender-row">
+                                <button className={`fdm-sender-btn${nitroSenderId === me?.id ? " fdm-sender-btn--active" : ""}`} onClick={() => setNitroSenderId(me?.id ?? "")}>
+                                    <UserAvatar user={me} /><span className="fdm-sender-name">{meName}</span>
+                                </button>
+                                <button className={`fdm-sender-btn${nitroSenderId !== me?.id ? " fdm-sender-btn--active" : ""}`} onClick={() => setNitroSenderId(other?.id ?? "")}>
+                                    <UserAvatar user={other} /><span className="fdm-sender-name">{otherName}</span>
+                                </button>
+                            </div>
+                        )}
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px" }}>
+                            <span className="fdm-date-label">Gift :</span>
+                            <select
+                                value={nitroGiftType}
+                                onChange={e => setNitroGiftType(e.target.value as any)}
+                                style={{
+                                    flex: 1, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)",
+                                    borderRadius: 6, color: "#fff", fontSize: 13, padding: "4px 6px", cursor: "pointer",
+                                }}
+                            >
+                                <option value="nitro" style={{ background: "#2b2d31" }}>Discord Nitro</option>
+                                <option value="nitro_basic" style={{ background: "#2b2d31" }}>Discord Nitro Basic</option>
+                            </select>
+                        </div>
+
+                        <div className="fdm-date-row">
+                            <span className="fdm-date-label">Date :</span>
+                            <input type="datetime-local" className="fdm-date-input" value={dateStr} onChange={e => setDateStr(e.target.value)} />
+                            <button className="fdm-date-now" onClick={() => setDateStr(toLocal(new Date()))}>Now</button>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 6, padding: "6px 12px 4px" }}>
+                            <button className="fdm-send-btn" style={{ flex: 1, background: "#ff73fa" }} onClick={sendNitro}>Inject Nitro Gift</button>
+                            <button className="fdm-clear-btn" onClick={() => {
+                                if (!channelId) return;
+                                const n = clearFakes(channelId);
+                                setMsg(`${n} msg${n !== 1 ? "s" : ""} deleted ✓`, true);
+                            }}>🗑 Clear</button>
+                        </div>
+                    </>
                 ) : mode === "message" ? (
                     <>
                         {SenderRow}

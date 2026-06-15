@@ -8,7 +8,7 @@ import ErrorBoundary from "@components/ErrorBoundary";
 import { Logger } from "@utils/Logger";
 import { classes } from "@utils/misc";
 import { findComponentByCodeLazy, findCssClassesLazy } from "@webpack";
-import { Clickable, Tooltip, useEffect, useState, Popout, useRef } from "@webpack/common";
+import { Clickable, Popout, Tooltip, useEffect, useRef, useState } from "@webpack/common";
 import type { ComponentType, JSX, MouseEventHandler, ReactNode } from "react";
 
 const logger = new Logger("HeaderBarAPI");
@@ -227,7 +227,14 @@ const NON_REACT_SELECTORS = [
     ".nai-nav-item",
 ];
 
-function hideNonReactElements(hide: boolean) {
+let hideNonReactRaf: number | null = null;
+
+function hideNonReactElements(hide: boolean, silent = false) {
+    if (hideNonReactRaf !== null) {
+        cancelAnimationFrame(hideNonReactRaf);
+        hideNonReactRaf = null;
+    }
+
     let count = 0;
     for (const sel of NON_REACT_SELECTORS) {
         try {
@@ -237,7 +244,15 @@ function hideNonReactElements(hide: boolean) {
             });
         } catch { }
     }
-    console.log("[StealthMode] hideNonReact hide=" + hide + " count=" + count);
+    if (!silent) console.log("[StealthMode] hideNonReact hide=" + hide + " count=" + count);
+}
+
+function queueHideNonReactElements() {
+    if (hideNonReactRaf !== null) return;
+    hideNonReactRaf = requestAnimationFrame(() => {
+        hideNonReactRaf = null;
+        if (_stealthActive) hideNonReactElements(true, true);
+    });
 }
 
 export function syncStealthBodyClass() {
@@ -279,7 +294,7 @@ try {
     const startObserver = () => {
         if (stealthObserver) return;
         stealthObserver = new MutationObserver(() => {
-            if (_stealthActive) hideNonReactElements(true);
+            if (_stealthActive) queueHideNonReactElements();
         });
         const target = document.body || document.documentElement;
         if (target) {
@@ -308,7 +323,6 @@ export function _notifyStealthChange() {
 }
 export function addStealthListener(fn: () => void) { stealthListeners.add(fn); }
 export function removeStealthListener(fn: () => void) { stealthListeners.delete(fn); }
-
 
 // ------------------------------------------------------------------------------
 // COMPACT MODE � variable m�moire comme source de v�rit�

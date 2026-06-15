@@ -24,16 +24,19 @@ export function SettingRangeComponent({ label, name, default: def, min, max, ste
         themeSettings[name] = corrected;
     }
 
+    const minValue = min ?? 0;
+    const maxValue = max ?? 10;
+    const stepValue = step ?? 1;
     const markers = useMemo(() => {
         const markers: number[] = [];
 
         // defaults taken from https://github.com/openstyles/stylus/wiki/Writing-UserCSS#default-value
-        for (let i = (min ?? 0); i <= (max ?? 10); i += (step ?? 1)) {
+        for (let i = minValue; i <= maxValue; i += stepValue) {
             markers.push(i);
         }
 
         return markers;
-    }, [min, max, step]);
+    }, [minValue, maxValue, stepValue]);
 
     return (
         <section>
@@ -42,8 +45,8 @@ export function SettingRangeComponent({ label, name, default: def, min, max, ste
                 initialValue={parseInt(themeSettings[name], 10)}
                 defaultValue={def}
                 onValueChange={handleChange}
-                minValue={min}
-                maxValue={max}
+                minValue={minValue}
+                maxValue={maxValue}
 
                 markers={markers}
                 stickToMarkers={true}

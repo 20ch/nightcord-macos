@@ -373,6 +373,11 @@ const playerState = {
 };
 
 let playerInited = false;
+let playRequestId = 0;
+let cachedOutputDevice: { discordId: string; deviceId: string; expiresAt: number; } | null = null;
+
+const OUTPUT_DEVICE_CACHE_MS = 60_000;
+
 async function initPlayer() {
     if (playerInited) return;
     playerInited = true;
@@ -394,6 +399,9 @@ async function getDiscordRealOutputDeviceId(): Promise<string> {
     try {
         const discordId = MediaEngineStore.getOutputDeviceId();
         if (!discordId || discordId === "default") return "";
+        if (cachedOutputDevice?.discordId === discordId && cachedOutputDevice.expiresAt > Date.now()) {
+            return cachedOutputDevice.deviceId;
+        }
 
         const devs = MediaEngineStore.getOutputDevices();
         const selected = devs[discordId];
@@ -416,6 +424,11 @@ async function getDiscordRealOutputDeviceId(): Promise<string> {
 
         if (match) {
             console.log(`[SoundCord] Mapped Discord output device "${selected.name}" to WebAudio deviceId "${match.deviceId}"`);
+            cachedOutputDevice = {
+                discordId,
+                deviceId: match.deviceId,
+                expiresAt: Date.now() + OUTPUT_DEVICE_CACHE_MS,
+            };
             return match.deviceId;
         }
     } catch (err) {
@@ -426,6 +439,7 @@ async function getDiscordRealOutputDeviceId(): Promise<string> {
 
 async function playerPlayTrack(track: ScTrack, fromFavIdx = -1, fromQueueIdx = -1) {
     const s = playerState;
+    const requestId = ++playRequestId;
     if (!s.clientId) { s.status = "❌ Missing client_id"; s.notify(); return; }
     if (s.audio) { s.audio.pause(); s.audio.src = ""; s.audio = null; }
 
@@ -438,13 +452,17 @@ async function playerPlayTrack(track: ScTrack, fromFavIdx = -1, fromQueueIdx = -
 
     try {
         const freshTrack = await refreshTrackData(track, s.clientId);
+        if (requestId !== playRequestId) return;
         s.playing = freshTrack;
         addToHistory(freshTrack);
 
         const mp3Url = await getStreamUrl(freshTrack.streamUrl, s.clientId);
+        if (requestId !== playRequestId) return;
         const audio = new Audio();
+        let lastProgressNotify = 0;
 
         audio.addEventListener("error", e => {
+            if (requestId !== playRequestId) return;
             const { error } = audio;
             console.error("[SoundCord] HTML5 Audio Error:", error?.code, error?.message);
             if (error?.code === 4 || error?.code === 3) {
@@ -480,9 +498,14 @@ async function playerPlayTrack(track: ScTrack, fromFavIdx = -1, fromQueueIdx = -
         audio.addEventListener("timeupdate", () => {
             s.position = audio.currentTime;
             s.progress = audio.duration > 0 ? audio.currentTime / audio.duration : 0;
-            s.notify();
+            const now = Date.now();
+            if (now - lastProgressNotify >= 250) {
+                lastProgressNotify = now;
+                s.notify();
+            }
         });
         audio.addEventListener("ended", () => {
+            if (requestId !== playRequestId) return;
             s.isPlaying = false; s.progress = 0; s.position = 0;
             s.notify();
             if (s.repeatMode === "one") {
@@ -495,20 +518,23 @@ async function playerPlayTrack(track: ScTrack, fromFavIdx = -1, fromQueueIdx = -
                     if (s.audio) { s.audio.currentTime = 0; s.audio.play().catch(() => { }); s.isPlaying = true; s.notify(); }
                     else playerPlayTrack(track, fromFavIdx, fromQueueIdx);
                 }, 100);
-            } else if (fromQueueIdx >= 0 && s.queue.length > 1) {
-                playerPlayQueueAt((fromQueueIdx + 1) % s.queue.length);
-            } else if (fromFavIdx >= 0 && s.favorites.length > 1) {
-                playerPlayFavAt((fromFavIdx + 1) % s.favorites.length);
             } else if (s.queue.length > 0) {
                 playerPlayQueueAt(0);
+            } else if (fromFavIdx >= 0 && s.favorites.length > 1) {
+                playerPlayFavAt((fromFavIdx + 1) % s.favorites.length);
             }
         });
-        audio.addEventListener("error", () => { s.status = "❌ Audio playback error"; s.isPlaying = false; s.notify(); });
         await audio.play();
+        if (requestId !== playRequestId) {
+            audio.pause();
+            audio.src = "";
+            return;
+        }
         s.isPlaying = true;
         s.status = "▶ Now playing…";
         s.notify();
     } catch (e: any) {
+        if (requestId !== playRequestId) return;
         s.status = `❌ Stream error : ${e.message}`;
         s.isPlaying = false;
         s.notify();
@@ -523,10 +549,15 @@ function playerPlayFavAt(idx: number) {
 }
 
 function playerPlayQueueAt(idx: number) {
-    const queue = playerState.queue;
+    const { queue } = playerState;
     if (queue.length === 0) return;
     const i = ((idx % queue.length) + queue.length) % queue.length;
-    playerPlayTrack(queue[i], -1, i);
+    const [track] = queue.splice(i, 1);
+    playerState.queue = [...queue];
+    playerState.queueIndex = -1;
+    saveQueue(playerState.queue);
+    playerState.notify();
+    playerPlayTrack(track, -1, -1);
 }
 
 function addToQueue(track: ScTrack) {
@@ -557,8 +588,8 @@ function clearQueue() {
 
 function playNext() {
     const s = playerState;
-    if (s.queue.length > 0 && s.queueIndex >= 0) {
-        playerPlayQueueAt((s.queueIndex + 1) % s.queue.length);
+    if (s.queue.length > 0) {
+        playerPlayQueueAt(0);
     } else if (s.favorites.length > 0 && s.favIndex >= 0) {
         playerPlayFavAt((s.favIndex + 1) % s.favorites.length);
     }
@@ -779,6 +810,7 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
     const [selectedOutput, setSelectedOutput] = useState<string>("default");
     const p = usePlayerState();
     const progressRef = useRef<HTMLDivElement>(null);
+    const searchRequestRef = useRef(0);
 
     useEffect(() => { initPlayer(); }, []);
     useKeyboardShortcuts();
@@ -826,14 +858,17 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
 
     async function doSearch(isRetry = false) {
         if (!p.clientId || !query.trim()) return;
+        const requestId = isRetry ? searchRequestRef.current : ++searchRequestRef.current;
         p.status = "Searching..."; p.notify();
         addToSearchHistory(query);
         try {
             const tracks = await searchTracks(query, p.clientId);
+            if (requestId !== searchRequestRef.current) return;
             setResults(tracks);
             p.status = tracks.length > 0 ? `${tracks.length} results` : "No results";
             p.notify();
         } catch (e: any) {
+            if (requestId !== searchRequestRef.current) return;
             if (!isRetry && (e.message?.includes("401") || e.message?.includes("403"))) {
                 p.status = "Refreshing connection..."; p.notify();
                 const newId = await refreshClientId();
@@ -845,7 +880,6 @@ function SoundCloudModal({ onClose }: { onClose: () => void; }) {
             } else { p.status = `Error : ${e.message}`; p.notify(); }
         }
     }
-
 
     function handleSeek(e: React.MouseEvent<HTMLDivElement>) {
         if (!p.audio || !progressRef.current) return;
@@ -1084,15 +1118,16 @@ function initThumbar() {
 
         // Listen for taskbar clicks
         win.onThumbarClick((action: string) => {
-            const s = playerState;
             try {
                 if (action === "prev") {
-                    if (s.favIndex >= 0) playerPlayFavAt(s.favIndex - 1);
+                    playPrevious();
                 } else if (action === "next") {
-                    if (s.favIndex >= 0) playerPlayFavAt(s.favIndex + 1);
+                    playNext();
                 } else if (action === "play") {
+                    const s = playerState;
                     if (s.audio) { s.audio.play().catch(() => { }); s.isPlaying = true; s.notify(); }
                 } else if (action === "pause") {
+                    const s = playerState;
                     if (s.audio) { s.audio.pause(); s.isPlaying = false; s.notify(); }
                 }
             } catch { }

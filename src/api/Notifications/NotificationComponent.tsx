@@ -60,16 +60,18 @@ export default ErrorBoundary.wrap(function NotificationComponent({
             pause.current = null;
         }
 
+        const elapsedNow = Date.now() - start.current;
+        const remaining = Math.max(timeout - elapsedNow, 0);
+        const timeoutId = setTimeout(onClose!, remaining);
         const intervalId = setInterval(() => {
             const elapsedNow = Date.now() - start.current;
-            if (elapsedNow >= timeout) {
-                onClose!();
-            } else {
-                setElapsed(elapsedNow);
-            }
-        }, 10);
+            setElapsed(Math.min(elapsedNow, timeout));
+        }, 100);
 
-        return () => clearInterval(intervalId);
+        return () => {
+            clearTimeout(timeoutId);
+            clearInterval(intervalId);
+        };
     }, [timeout, isHover, permanent]);
 
     const timeoutProgress = elapsed / timeout;

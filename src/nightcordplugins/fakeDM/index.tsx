@@ -277,40 +277,55 @@ function injectNitro(
     const actualDate = persistedId ? date : randomSeconds(date);
     const id = persistedId ?? uniqueSnowflake(actualDate);
 
-    // Create realistic Nitro gift embed based on Discord's actual structure
+    const generateGiftCode = (): string => {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let code = "";
+        for (let i = 0; i < 24; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        // Discord gift codes are often formatted with dashes
+        return code.match(/.{1,4}/g)?.join("-") || code;
+    };
+
+    const giftCode = generateGiftCode();
     const isNitroBasic = giftType === "nitro_basic";
-    const giftSkuId = isNitroBasic ? "844674372864663552" : "844674372864663552";
+    const giftSkuId = isNitroBasic ? "844674372864663552" : "521846818728800778";
     
-    // Discord gift embed structure matching the HTML provided
+    // Real Discord gift embed structure
     const embed = {
-        type: "rich",
+        type: "gift",
         title: `Tu as offert un abonnement !`,
         description: "Si tu veux récupérer ce cadeau pour ton usage personnel, vas-y, fais-toi plaisir. Promis, on ne juge pas :)",
         color: 0x5865F2,
+        gift_code: giftCode,
+        gift_sku_id: giftSkuId,
+        application_id: null,
         thumbnail: {
-            url: "https://cdn.discordapp.com/attachments/814223302520254564/1084277055257960538/nitro_gift.png",
-            proxy_url: "https://media.discordapp.net/attachments/814223302520254564/1084277055257960538/nitro_gift.png"
+            url: "https://cdn.discordapp.com/app-assets/814223302520254564/1084277055257960538/nitro_gift.png",
+            proxy_url: "https://media.discordapp.net/app-assets/814223302520254564/1084277055257960538/nitro_gift.png",
+            width: 900,
+            height: 700
         },
         author: {
             name: sender.globalName || sender.username,
             icon_url: avatarUrl(sender)
         },
         footer: {
-            text: "Gift"
+            text: `Expire dans 28 heures`
+        },
+        provider: {
+            name: "Discord"
         }
     };
 
-    // Add button component for "Open Gift" matching the HTML structure
     const components = [{
         type: 1, // ACTION_ROW
         components: [{
             type: 2, // BUTTON
             style: 5, // LINK
             label: "Ouvrir le cadeau",
-            url: "https://discord.com/promotions/nitro",
-            emoji: {
-                name: "🎁"
-            }
+            url: "/store",
+            emoji: null
         }]
     }];
 
@@ -347,7 +362,7 @@ function injectNitro(
             type: "message",
             channelId,
             authorId: sender.id,
-            content: `[NITRO_GIFT:${giftType}]`,
+            content: `[NITRO_GIFT:${giftType}:${giftCode}]`,
             timestamp: actualDate.toISOString(),
             snowflakeId: id,
         });
@@ -378,7 +393,8 @@ function doRestore() {
             
             // Check if this is a nitro gift
             if (f.content.startsWith("[NITRO_GIFT:")) {
-                const giftType = f.content.match(/\[NITRO_GIFT:(.*?)\]/)?.[1] as "nitro" | "nitro_basic" | "nitro_full" || "nitro";
+                const giftMatch = f.content.match(/\[NITRO_GIFT:(.*?)(?::(.*?))?\]/);
+                const giftType = (giftMatch?.[1] as "nitro" | "nitro_basic" | "nitro_full") || "nitro";
                 injectNitro(f.channelId, author, giftType, new Date(f.timestamp), f.snowflakeId);
             } else {
                 inject(f.channelId, author, f.content, new Date(f.timestamp), f.snowflakeId);

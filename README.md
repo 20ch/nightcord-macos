@@ -6,7 +6,7 @@
 **Un client Discord personnalisé, transparent et performant, conçu pour ceux qui veulent garder le contrôle.**
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/nightcord)
-[![License](https://img.shields.io/badge/License-GPL%20v3-a855f7?style=flat-square)](./LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS-3b82f6?style=flat-square&logo=apple&logoColor=white)](https://github.com/20ch/nightcord-macos)
 [![Website](https://img.shields.io/badge/Website-nightcord.lovable.app-00dfa2?style=flat-square&logo=googlechrome&logoColor=white)](https://nightcord.lovable.app)
 

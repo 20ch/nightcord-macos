@@ -227,6 +227,7 @@ const NON_REACT_SELECTORS = [
     ".nai-nav-item",
 ];
 
+<<<<<<< HEAD
 let hideNonReactRaf: number | null = null;
 
 function hideNonReactElements(hide: boolean, silent = false) {
@@ -235,6 +236,9 @@ function hideNonReactElements(hide: boolean, silent = false) {
         hideNonReactRaf = null;
     }
 
+=======
+function hideNonReactElements(hide: boolean) {
+>>>>>>> 86a81e03f9f3f7b294b82bc68f6e83d2c5282b6e
     let count = 0;
     for (const sel of NON_REACT_SELECTORS) {
         try {
@@ -244,6 +248,7 @@ function hideNonReactElements(hide: boolean, silent = false) {
             });
         } catch { }
     }
+<<<<<<< HEAD
     if (!silent) console.log("[StealthMode] hideNonReact hide=" + hide + " count=" + count);
 }
 
@@ -253,6 +258,9 @@ function queueHideNonReactElements() {
         hideNonReactRaf = null;
         if (_stealthActive) hideNonReactElements(true, true);
     });
+=======
+    console.log("[StealthMode] hideNonReact hide=" + hide + " count=" + count);
+>>>>>>> 86a81e03f9f3f7b294b82bc68f6e83d2c5282b6e
 }
 
 export function syncStealthBodyClass() {
@@ -294,7 +302,11 @@ try {
     const startObserver = () => {
         if (stealthObserver) return;
         stealthObserver = new MutationObserver(() => {
+<<<<<<< HEAD
             if (_stealthActive) queueHideNonReactElements();
+=======
+            if (_stealthActive) hideNonReactElements(true);
+>>>>>>> 86a81e03f9f3f7b294b82bc68f6e83d2c5282b6e
         });
         const target = document.body || document.documentElement;
         if (target) {
@@ -324,6 +336,10 @@ export function _notifyStealthChange() {
 export function addStealthListener(fn: () => void) { stealthListeners.add(fn); }
 export function removeStealthListener(fn: () => void) { stealthListeners.delete(fn); }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 86a81e03f9f3f7b294b82bc68f6e83d2c5282b6e
 // ------------------------------------------------------------------------------
 // COMPACT MODE � variable m�moire comme source de v�rit�
 // ------------------------------------------------------------------------------

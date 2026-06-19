@@ -31,6 +31,31 @@ export type LinkButtonProps = ComponentPropsWithRef<"a"> & {
     variant?: ButtonVariant;
 };
 
+const ButtonLooks = {
+    FILLED: "",
+    LINK: "LINK"
+} as const;
+
+const ButtonColors = {
+    BRAND: "BRAND",
+    PRIMARY: "PRIMARY",
+    RED: "RED",
+    TRANSPARENT: "TRANSPARENT",
+    CUSTOM: "CUSTOM",
+    GREEN: "GREEN",
+    LINK: "LINK",
+    WHITE: "WHITE",
+} as const;
+
+const ButtonSizes = {
+    SMALL: "small",
+    MEDIUM: "medium",
+    LARGE: "medium",
+    XLARGE: "medium",
+    NONE: "min",
+    MIN: "min"
+} as const;
+
 export function Button({ variant = "primary", size = "medium", children, className, ...restProps }: ButtonProps) {
     return (
         <button data-mana-component="button" className={classes(btnCls("base", variant, size), className)} {...restProps}>
@@ -39,6 +64,10 @@ export function Button({ variant = "primary", size = "medium", children, classNa
         </button>
     );
 }
+
+Button.Looks = ButtonLooks;
+Button.Colors = ButtonColors;
+Button.Sizes = ButtonSizes;
 
 export function LinkButton({ variant = "link", size = "medium", className, children, ...restProps }: LinkButtonProps) {
     return (
@@ -70,22 +99,10 @@ export const ButtonCompat: DiscordButton = function ButtonCompat({ look, color =
 };
 
 /** @deprecated */
-ButtonCompat.Looks = {
-    FILLED: "",
-    LINK: "LINK"
-} as const;
+ButtonCompat.Looks = ButtonLooks;
 
 /** @deprecated */
-ButtonCompat.Colors = {
-    BRAND: "BRAND",
-    PRIMARY: "PRIMARY",
-    RED: "RED",
-    TRANSPARENT: "TRANSPARENT",
-    CUSTOM: "CUSTOM",
-    GREEN: "GREEN",
-    LINK: "LINK",
-    WHITE: "WHITE",
-} as const;
+ButtonCompat.Colors = ButtonColors;
 
 const ButtonColorMapping: Record<keyof typeof ButtonCompat["Colors"], ButtonProps["variant"]> = {
     BRAND: "primary",
@@ -110,13 +127,6 @@ const TextButtonPropsColorMapping: Record<keyof typeof ButtonCompat["Colors"], T
 };
 
 /** @deprecated */
-ButtonCompat.Sizes = {
-    SMALL: "small",
-    MEDIUM: "medium",
-    LARGE: "medium",
-    XLARGE: "medium",
-    NONE: "min",
-    MIN: "min"
-} as const;
+ButtonCompat.Sizes = ButtonSizes;
 
 // #endregion

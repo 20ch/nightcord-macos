@@ -52,7 +52,12 @@ async function checkForUpdates() {
     try {
         const localVersion = getLocalVersion();
         const res = await fetch(REMOTE_VERSION_URL);
-        if (!res.ok) return;
+        if (!res.ok) {
+            if (res.status === 404) {
+                console.log("[NightcordUpdater] Repository or releases not found, skipping update check");
+            }
+            return;
+        }
 
         const data = await res.json();
         if (!data?.tag_name) return;

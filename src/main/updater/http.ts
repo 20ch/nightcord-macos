@@ -45,19 +45,27 @@ function isNewer(a: string, b: string): boolean {
 }
 
 async function fetchUpdates(): Promise<boolean> {
-    const data = await githubGet("/releases/latest");
-    const latestTag: string = data.tag_name ?? "";
+    try {
+        const data = await githubGet("/releases/latest");
+        const latestTag: string = data.tag_name ?? "";
 
-    if (!latestTag || !isNewer(CURRENT_VERSION, latestTag)) return false;
+        if (!latestTag || !isNewer(CURRENT_VERSION, latestTag)) return false;
 
-    const asset = (data.assets as any[])?.find(
-        (a: any) => a.name === ZIP_FILE
-    );
-    if (!asset) return false;
+        const asset = (data.assets as any[])?.find(
+            (a: any) => a.name === ZIP_FILE
+        );
+        if (!asset) return false;
 
-    pendingDownloadUrl = asset.browser_download_url;
-    pendingVersion = latestTag;
-    return true;
+        pendingDownloadUrl = asset.browser_download_url;
+        pendingVersion = latestTag;
+        return true;
+    } catch (e: any) {
+        // Silently ignore 404 and other GitHub API errors
+        if (e?.message?.includes("404")) {
+            console.log("[Updater] Repository or releases not found, skipping update check");
+        }
+        return false;
+    }
 }
 
 async function getUpdates() {

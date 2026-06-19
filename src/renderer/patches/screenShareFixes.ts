@@ -11,19 +11,50 @@ import { isLinux, isMac } from "renderer/utils";
 
 const logger = new Logger("EquibopStreamFixes");
 
-const virtualMacAudioNames = ["blackhole", "loopback", "soundflower", "vb-cable", "vb audio", "vbcable", "screen audio", "system audio"];
+const virtualMacAudioNames = [
+    "blackhole",
+    "loopback",
+    "soundflower",
+    "vb-cable",
+    "vb audio",
+    "vbcable",
+    "screen audio",
+    "system audio",
+    "background music",
+    "existential audio"
+];
+
+function isVirtualMacAudioDevice(device: MediaDeviceInfo) {
+    const label = device.label.toLowerCase();
+    return virtualMacAudioNames.some(name => label.includes(name));
+}
+
+async function enumerateAudioInputsWithLabels() {
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    let audioInputs = devices.filter(device => device.kind === "audioinput");
+
+    if (audioInputs.some(device => !device.label)) {
+        const permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(error => {
+            logger.error("Failed to request microphone access for macOS screen share audio.", error);
+            return null;
+        });
+
+        permissionStream?.getTracks().forEach(track => track.stop());
+
+        devices = await navigator.mediaDevices.enumerateDevices();
+        audioInputs = devices.filter(device => device.kind === "audioinput");
+    }
+
+    return audioInputs;
+}
 
 async function getMacAudioDeviceId(preferredDeviceId?: string) {
     try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const audioInputs = devices.filter(device => device.kind === "audioinput");
+        const audioInputs = await enumerateAudioInputsWithLabels();
         const preferredDevice = audioInputs.find(device => device.deviceId === preferredDeviceId);
         if (preferredDevice) return preferredDevice.deviceId;
 
-        return audioInputs.find(device => {
-            const label = device.label.toLowerCase();
-            return virtualMacAudioNames.some(name => label.includes(name));
-        })?.deviceId ?? null;
+        return audioInputs.find(isVirtualMacAudioDevice)?.deviceId ?? null;
     } catch (error) {
         logger.error("Failed to enumerate macOS audio devices.", error);
         return null;
@@ -31,25 +62,37 @@ async function getMacAudioDeviceId(preferredDeviceId?: string) {
 }
 
 async function addAudioTrack(stream: MediaStream, deviceId: string) {
-    const audio = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            deviceId: {
-                exact: deviceId
-            },
-            autoGainControl: false,
-            echoCancellation: false,
-            noiseSuppression: false,
-            channelCount: 2,
-            sampleRate: 48000,
-            sampleSize: 16
+    const constraints: MediaTrackConstraints = {
+        deviceId: {
+            exact: deviceId
+        },
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false,
+        channelCount: {
+            ideal: 2
+        },
+        sampleRate: {
+            ideal: 48000
+        },
+        sampleSize: {
+            ideal: 16
         }
-    });
+    };
+
+    const audio = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+    const [audioTrack] = audio.getAudioTracks();
+
+    if (!audioTrack) {
+        audio.getTracks().forEach(track => track.stop());
+        throw new Error("Selected macOS audio device did not return an audio track.");
+    }
 
     stream.getAudioTracks().forEach(track => {
         stream.removeTrack(track);
         track.stop();
     });
-    stream.addTrack(audio.getAudioTracks()[0]);
+    stream.addTrack(audioTrack);
 }
 
 if (isLinux || isMac) {
@@ -72,6 +115,8 @@ if (isLinux || isMac) {
             const id = await getMacAudioDeviceId(currentSettings.macAudioDeviceId);
             if (id) {
                 await addAudioTrack(stream, id).catch(e => logger.error("Failed to add macOS audio track.", e));
+            } else {
+                logger.warn("No virtual macOS audio input found for screen share audio.");
             }
         }
 

@@ -13,7 +13,7 @@ import type { ComponentType, JSX, MouseEventHandler, ReactNode } from "react";
 
 const logger = new Logger("HeaderBarAPI");
 
-const HeaderBarClasses = findCssClassesLazy("clickable", "withHighlight");
+const HeaderBarClasses = findCssClassesLazy("clickable", "withHighlight") || { clickable: "", withHighlight: "" };
 const HeaderBarIcon = findComponentByCodeLazy(".HEADER_BAR_BADGE_TOP:", '"aria-haspopup":') as ComponentType<ChannelToolbarButtonProps>;
 
 export interface HeaderBarButtonProps {

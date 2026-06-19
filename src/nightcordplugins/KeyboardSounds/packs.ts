@@ -116,5 +116,5 @@ export const mechvibesPacks: Record<string, any> = {
     }),
     "banana-split": buildPack("banana split lubed", "banana-split", "Banana Split (Akira)", "banana-l-1.wav"),
     "mx-speed-silver": buildPack("mx-speed-silver", "mx-speed-silver", "MX Speed Silver (Akira)", "mx-speed-silver-1.wav"),
-    "nk-cream": buildPack("nk-cream", "nk-cream", "NK Cream (Akira)", "sound.ogg")
+    // "nk-cream": buildPack("nk-cream", "nk-cream", "NK Cream (Akira)", "sound.ogg") // Disabled: audio files not found
 };

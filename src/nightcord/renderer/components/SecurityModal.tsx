@@ -105,10 +105,9 @@ export function SecurityModal(props: ModalProps) {
             </ModalContent>
             <ModalFooter style={{ justifyContent: "flex-end" }}>
                 <Button
-                    color={canClose ? Button.Colors.BRAND : "PRIMARY"}
+                    variant={canClose ? "primary" : "secondary"}
                     disabled={!canClose}
                     onClick={onClose}
-                    look={Button.Looks.FILLED}
                     style={{ minWidth: "110px" }}
                 >
                     {canClose ? "OK" : `OK (${timeLeft}s)`}
